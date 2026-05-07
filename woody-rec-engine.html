@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Woody — Rec Engine v0.1</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Epilogue:ital,wght@0,300;0,400;0,500;1,300&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --void: #0a0a0f;
+      --teal: #00e5c4;
+      --cobalt: #4455ff;
+      --moon: #f0ede6;
+      --amber: #f0a040;
+      --muted: rgba(240,237,230,0.38);
+      --panel: rgba(240,237,230,0.042);
+      --panel-hover: rgba(240,237,230,0.07);
+      --border: rgba(240,237,230,0.10);
+      --teal-dim: rgba(0,229,196,0.12);
+      --teal-glow: rgba(0,229,196,0.35);
+      --amber-dim: rgba(240,160,64,0.15);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--void);
+      color: var(--moon);
+      font-family: 'Epilogue', sans-serif;
+      font-weight: 400;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── grain ── */
+    .grain {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+      background-repeat: repeat; background-size: 128px 128px; opacity: 0.028;
+    }
+
+    /* ── header ── */
+    .site-header {
+      display: flex; align-items: center; gap: 20px;
+      padding: 18px 32px;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(10,10,15,0.92);
+      backdrop-filter: blur(12px);
+    }
+    .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 18px; letter-spacing: 0.12em; text-transform: uppercase; }
+    .logo span { color: var(--teal); }
+    .badge {
+      font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.08em;
+      color: var(--muted); border: 1px solid var(--border); padding: 4px 10px; border-radius: 2px;
+    }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+    .spotify-btn {
+      font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
+      background: none; border: 1px solid rgba(29,185,84,0.5); color: #1db954;
+      padding: 6px 14px; border-radius: 2px; cursor: pointer;
+      transition: all 0.2s; white-space: nowrap;
+    }
+    .spotify-btn:hover { background: rgba(29,185,84,0.1); }
+    .phase-badge {
+      font-family: 'Space Mono', monospace; font-size: 10px;
+      color: var(--teal); opacity: 0.6;
+    }
+
+    /* ── layout ── */
+    .app { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 61px); }
+
+    /* ── left panel ── */
+    .intent-panel {
+      border-right: 1px solid var(--border);
+      padding: 28px 24px;
+      display: flex; flex-direction: column; gap: 32px;
+      overflow-y: auto;
+      position: sticky; top: 61px; height: calc(100vh - 61px);
+    }
+
+    .panel-section-label {
+      font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+    }
+
+    .intent-input {
+      width: 100%; background: var(--panel); border: 1px solid var(--border);
+      color: var(--moon); font-family: 'Epilogue', sans-serif; font-size: 13px;
+      padding: 12px 14px; border-radius: 4px; resize: none; line-height: 1.6;
+      transition: border-color 0.2s;
+    }
+    .intent-input::placeholder { color: var(--muted); font-style: italic; }
+    .intent-input:focus { outline: none; border-color: rgba(0,229,196,0.4); }
+
+    .find-btn {
+      width: 100%; margin-top: 10px;
+      background: var(--teal); color: var(--void);
+      font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.1em;
+      padding: 11px; border: none; border-radius: 3px; cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .find-btn:hover { opacity: 0.88; }
+    .find-btn:active { transform: scale(0.99); }
+    .find-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ── acoustic readout ── */
+    .acoustic-readout { display: flex; flex-direction: column; gap: 10px; }
+    .dim-row { display: grid; grid-template-columns: 72px 1fr 32px; align-items: center; gap: 8px; }
+    .dim-name { font-size: 11px; color: var(--muted); font-style: italic; }
+    .dim-bar { height: 3px; background: rgba(240,237,230,0.08); border-radius: 2px; overflow: hidden; }
+    .dim-fill { height: 100%; background: var(--teal); border-radius: 2px; width: 0; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
+    .dim-fill.warm  { background: #e07050; }
+    .dim-fill.dens  { background: #8868cc; }
+    .dim-fill.org   { background: #60b860; }
+    .dim-fill.sac   { background: #b088e8; }
+    .dim-val { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); text-align: right; }
+    .no-intent { font-size: 11px; color: var(--muted); font-style: italic; }
+
+    /* ── territory ── */
+    .territory-list { display: flex; flex-direction: column; gap: 6px; }
+    .territory-empty { font-size: 11px; color: var(--muted); font-style: italic; line-height: 1.5; }
+    .territory-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--teal-dim); border: 1px solid rgba(0,229,196,0.15);
+      padding: 8px 10px; border-radius: 3px; gap: 8px;
+    }
+    .territory-item-info { min-width: 0; }
+    .territory-track { font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .territory-artist { font-size: 10px; color: var(--muted); }
+    .territory-remove {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 14px; line-height: 1; padding: 0 2px; flex-shrink: 0;
+      transition: color 0.15s;
+    }
+    .territory-remove:hover { color: var(--moon); }
+    .territory-count { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--teal); opacity: 0.7; }
+
+    /* ── main content ── */
+    .main-content { display: flex; flex-direction: column; min-height: 0; }
+
+    /* ── map ── */
+    .map-section {
+      padding: 28px 32px 0;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+    }
+    .map-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .map-title { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+    .map-legend { display: flex; align-items: center; gap: 16px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); }
+    .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .legend-dot.all { background: rgba(240,237,230,0.25); }
+    .legend-dot.rec { background: var(--amber); }
+    .legend-dot.ter { background: var(--teal); }
+
+    .map-wrap { position: relative; }
+    #acoustic-map { display: block; width: 100%; height: auto; cursor: crosshair; border-radius: 4px; }
+    .map-axis-x {
+      display: flex; justify-content: space-between;
+      font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); margin-top: 6px; padding: 0 2px;
+    }
+    .map-axis-y-wrap {
+      position: absolute; left: -22px; top: 50%; transform: translateY(-50%) rotate(-90deg);
+      font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); white-space: nowrap;
+    }
+
+    /* ── recs ── */
+    .recs-section { padding: 24px 32px; flex: 1; }
+    .recs-header {
+      display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px;
+    }
+    .recs-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 16px; }
+    .recs-hint { font-size: 11px; color: var(--muted); font-style: italic; }
+
+    .recs-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .rec-card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 5px; padding: 14px 12px;
+      cursor: pointer; transition: border-color 0.2s, background 0.2s;
+      position: relative; overflow: hidden;
+    }
+    .rec-card::before {
+      content: ''; position: absolute; inset: 0;
+      background: var(--amber-dim); opacity: 0; transition: opacity 0.2s;
+    }
+    .rec-card:hover { border-color: rgba(240,160,64,0.4); }
+    .rec-card:hover::before { opacity: 1; }
+    .rec-rank {
+      font-family: 'Space Mono', monospace; font-size: 9px; color: var(--amber); opacity: 0.7;
+      margin-bottom: 8px; letter-spacing: 0.06em;
+    }
+    .rec-title { font-family: 'Syne', sans-serif; font-weight: 600; font-size: 13px; margin-bottom: 3px; line-height: 1.3; }
+    .rec-artist { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+    .rec-dims { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+    .rec-dim-row { display: flex; align-items: center; gap: 5px; }
+    .rec-dim-label { font-size: 9px; color: var(--muted); width: 44px; font-style: italic; }
+    .rec-dim-bar { flex: 1; height: 2px; background: rgba(240,237,230,0.08); border-radius: 1px; overflow: hidden; }
+    .rec-dim-fill { height: 100%; border-radius: 1px; }
+    .rec-save-btn {
+      width: 100%; background: none; border: 1px solid var(--border);
+      color: var(--muted); font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.08em;
+      padding: 6px; border-radius: 2px; cursor: pointer; transition: all 0.15s;
+      position: relative; z-index: 1;
+    }
+    .rec-save-btn:hover { border-color: var(--teal); color: var(--teal); }
+    .rec-save-btn.saved { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
+
+    .recs-empty { font-size: 13px; color: var(--muted); font-style: italic; padding: 40px 0; }
+
+    /* ── tooltip ── */
+    .tooltip {
+      position: fixed; background: rgba(10,10,15,0.95); border: 1px solid var(--border);
+      padding: 8px 12px; border-radius: 3px; pointer-events: none;
+      font-size: 11px; line-height: 1.5; max-width: 220px; z-index: 500;
+      opacity: 0; transition: opacity 0.1s;
+    }
+    .tooltip.visible { opacity: 1; }
+    .tooltip-title { font-family: 'Syne', sans-serif; font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+    .tooltip-artist { color: var(--muted); font-size: 10px; }
+
+    /* ── no recs state ── */
+    .prompt-examples {
+      margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .prompt-chip {
+      font-family: 'Space Mono', monospace; font-size: 10px;
+      border: 1px solid var(--border); color: var(--muted);
+      padding: 5px 10px; border-radius: 2px; cursor: pointer;
+      transition: all 0.15s; background: none;
+    }
+    .prompt-chip:hover { border-color: var(--teal); color: var(--teal); }
+  </style>
+</head>
+<body>
+<div class="grain"></div>
+
+<header class="site-header">
+  <div class="logo">WO<span>O</span>DY</div>
+  <div class="badge">REC ENGINE — v0.1 PROTOTYPE</div>
+  <div class="header-right">
+    <span class="phase-badge">Phase 01 · Acoustic Discovery</span>
+    <button class="spotify-btn">⬡ Connect Spotify ↗</button>
+  </div>
+</header>
+
+<div class="app">
+  <!-- ── Left: Intent Panel ── -->
+  <aside class="intent-panel">
+
+    <div class="intent-section">
+      <div class="panel-section-label">What do you want to hear?</div>
+      <textarea class="intent-input" id="intent-input" rows="4"
+        placeholder="late night, something organic but not too quiet…&#10;focus without being sterile…&#10;spiritual but with tension…"></textarea>
+      <button class="find-btn" id="find-btn">Find tracks →</button>
+    </div>
+
+    <div class="acoustic-readout-section">
+      <div class="panel-section-label">Derived acoustic coordinates</div>
+      <div id="readout-empty" class="no-intent">Coordinates will appear once you search</div>
+      <div class="acoustic-readout" id="acoustic-readout" style="display:none">
+        <div class="dim-row">
+          <span class="dim-name">Energy</span>
+          <div class="dim-bar"><div class="dim-fill" id="fill-energy"></div></div>
+          <span class="dim-val" id="val-energy">—</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Warmth</span>
+          <div class="dim-bar"><div class="dim-fill warm" id="fill-warmth"></div></div>
+          <span class="dim-val" id="val-warmth">—</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Density</span>
+          <div class="dim-bar"><div class="dim-fill dens" id="fill-density"></div></div>
+          <span class="dim-val" id="val-density">—</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Organicity</span>
+          <div class="dim-bar"><div class="dim-fill org" id="fill-organicity"></div></div>
+          <span class="dim-val" id="val-organicity">—</span>
+        </div>
+        <div class="dim-row">
+          <span class="dim-name">Sacred</span>
+          <div class="dim-bar"><div class="dim-fill sac" id="fill-sacred"></div></div>
+          <span class="dim-val" id="val-sacred">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="territory-section">
+      <div class="panel-section-label">Your territory <span class="territory-count" id="territory-count"></span></div>
+      <div class="territory-list" id="territory-list">
+        <div class="territory-empty">Save tracks to build your acoustic territory — it'll bias future recommendations toward your proven taste.</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Right: Map + Recs ── -->
+  <div class="main-content">
+
+    <div class="map-section">
+      <div class="map-header">
+        <span class="map-title">Acoustic Space — Energy × Warmth</span>
+        <div class="map-legend">
+          <div class="legend-item"><div class="legend-dot all"></div>all tracks</div>
+          <div class="legend-item"><div class="legend-dot rec"></div>recommended</div>
+          <div class="legend-item"><div class="legend-dot ter"></div>your territory</div>
+        </div>
+      </div>
+      <div class="map-wrap">
+        <canvas id="acoustic-map" width="900" height="340"></canvas>
+        <div class="map-axis-x">
+          <span>← calm</span><span>energy →</span><span>intense →</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="recs-section">
+      <div class="recs-header">
+        <span class="recs-title">Recommendations</span>
+        <span class="recs-hint" id="recs-hint">Try a prompt to discover tracks</span>
+      </div>
+      <div id="recs-container">
+        <div class="recs-empty">Enter what you're looking for above.<br>
+          <div class="prompt-examples">
+            <button class="prompt-chip" data-prompt="late night, introspective, not too dark">late night introspective</button>
+            <button class="prompt-chip" data-prompt="organic and warm, acoustic feel, folk-ish">organic & warm</button>
+            <button class="prompt-chip" data-prompt="focus and clarity, minimal, not distracting">deep focus</button>
+            <button class="prompt-chip" data-prompt="spiritual and sacred, transcendent">sacred & transcendent</button>
+            <button class="prompt-chip" data-prompt="high energy dance, electronic, intense">high energy electronic</button>
+            <button class="prompt-chip" data-prompt="dreamy and hazy, shoegaze vibes">dreamy & hazy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip">
+  <div class="tooltip-title" id="tt-title"></div>
+  <div class="tooltip-artist" id="tt-artist"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ─────────────────────────────────────────
+  // TRACK DATABASE — 5D acoustic coordinates
+  // energy (0–1), warmth (0–1), density (0–1), organicity (0–1), sacred (0–1)
+  // ─────────────────────────────────────────
+  const TRACKS = [
+    // Ambient / Sacred / Minimal
+    { id:0,  title:"Spiegel im Spiegel",         artist:"Arvo Pärt",               P:{energy:.14,warmth:.65,density:.48,organicity:.40,sacred:.82} },
+    { id:1,  title:"Nuvole Bianche",              artist:"Ludovico Einaudi",         P:{energy:.08,warmth:.72,density:.22,organicity:.55,sacred:.72} },
+    { id:2,  title:"Gymnopédie No.1",             artist:"Erik Satie",               P:{energy:.06,warmth:.60,density:.15,organicity:.70,sacred:.55} },
+    { id:3,  title:"On the Nature of Daylight",   artist:"Max Richter",              P:{energy:.18,warmth:.65,density:.32,organicity:.55,sacred:.58} },
+    { id:4,  title:"November",                    artist:"Max Richter",              P:{energy:.14,warmth:.60,density:.28,organicity:.50,sacred:.62} },
+    { id:5,  title:"Untitled 1 (Vaka)",           artist:"Sigur Rós",                P:{energy:.22,warmth:.68,density:.35,organicity:.58,sacred:.62} },
+    { id:6,  title:"Near Light",                  artist:"Ólafur Arnalds",           P:{energy:.15,warmth:.62,density:.30,organicity:.52,sacred:.55} },
+    { id:7,  title:"Comptine d'un autre été",     artist:"Yann Tiersen",             P:{energy:.22,warmth:.68,density:.25,organicity:.72,sacred:.42} },
+
+    // Folk / Organic / Singer-songwriter
+    { id:8,  title:"Otoha",                       artist:"Ichiko Aoba",              P:{energy:.06,warmth:.82,density:.14,organicity:.88,sacred:.18} },
+    { id:9,  title:"Holocene",                    artist:"Bon Iver",                 P:{energy:.32,warmth:.75,density:.42,organicity:.82,sacred:.28} },
+    { id:10, title:"Skinny Love",                 artist:"Bon Iver",                 P:{energy:.38,warmth:.70,density:.35,organicity:.85,sacred:.22} },
+    { id:11, title:"White Winter Hymnal",         artist:"Fleet Foxes",              P:{energy:.45,warmth:.80,density:.52,organicity:.88,sacred:.35} },
+    { id:12, title:"Mitote",                      artist:"Silvana Estrada",          P:{energy:.28,warmth:.84,density:.38,organicity:.82,sacred:.16} },
+    { id:13, title:"Re: Stacks",                  artist:"Bon Iver",                 P:{energy:.20,warmth:.76,density:.30,organicity:.88,sacred:.32} },
+
+    // Jazz
+    { id:14, title:"Blue in Green",              artist:"Miles Davis",               P:{energy:.12,warmth:.78,density:.24,organicity:.72,sacred:.22} },
+    { id:15, title:"Peace Piece",                artist:"Bill Evans",                P:{energy:.16,warmth:.70,density:.28,organicity:.65,sacred:.55} },
+    { id:16, title:"Autumn Leaves",              artist:"Bill Evans",                P:{energy:.22,warmth:.72,density:.35,organicity:.68,sacred:.18} },
+    { id:17, title:"A Love Supreme (Pt. I)",     artist:"John Coltrane",             P:{energy:.55,warmth:.62,density:.68,organicity:.72,sacred:.52} },
+    { id:18, title:"Come Away with Me",          artist:"Norah Jones",               P:{energy:.25,warmth:.78,density:.30,organicity:.75,sacred:.20} },
+
+    // Electronic — Aphex Twin
+    { id:19, title:"avril 14th",                 artist:"Aphex Twin",                P:{energy:.10,warmth:.36,density:.18,organicity:.78,sacred:.08} },
+    { id:20, title:"Windowlicker",               artist:"Aphex Twin",                P:{energy:.78,warmth:.18,density:.80,organicity:.15,sacred:.05} },
+    { id:21, title:"Alberto Balsalm",            artist:"Aphex Twin",                P:{energy:.35,warmth:.55,density:.45,organicity:.62,sacred:.12} },
+    { id:22, title:"Rhubarb",                    artist:"Aphex Twin",                P:{energy:.08,warmth:.48,density:.20,organicity:.42,sacred:.35} },
+
+    // Dark Electronic / Burial
+    { id:23, title:"Archangel",                  artist:"Burial",                    P:{energy:.32,warmth:.28,density:.55,organicity:.35,sacred:.42} },
+    { id:24, title:"Untrue",                     artist:"Burial",                    P:{energy:.28,warmth:.32,density:.48,organicity:.30,sacred:.38} },
+    { id:25, title:"Shell of Light",             artist:"Burial",                    P:{energy:.22,warmth:.35,density:.42,organicity:.38,sacred:.48} },
+
+    // Four Tet
+    { id:26, title:"Locked",                     artist:"Four Tet",                  P:{energy:.35,warmth:.55,density:.45,organicity:.48,sacred:.28} },
+    { id:27, title:"Baby",                       artist:"Four Tet",                  P:{energy:.28,warmth:.62,density:.38,organicity:.55,sacred:.32} },
+    { id:28, title:"My Angel Rocks Back and Forth", artist:"Four Tet",              P:{energy:.18,warmth:.58,density:.32,organicity:.52,sacred:.38} },
+
+    // Shoegaze / Dream Pop
+    { id:29, title:"Only Shallow",               artist:"My Bloody Valentine",       P:{energy:.68,warmth:.45,density:.82,organicity:.52,sacred:.22} },
+    { id:30, title:"Sometimes",                  artist:"My Bloody Valentine",       P:{energy:.42,warmth:.52,density:.72,organicity:.48,sacred:.30} },
+    { id:31, title:"Breathe (In the Air)",       artist:"Pink Floyd",                P:{energy:.30,warmth:.58,density:.45,organicity:.62,sacred:.35} },
+    { id:32, title:"Teardrop",                   artist:"Massive Attack",            P:{energy:.35,warmth:.52,density:.55,organicity:.58,sacred:.38} },
+
+    // Pop / Electronic pop
+    { id:33, title:"Trop Sensible",              artist:"Étienne Daho",              P:{energy:.55,warmth:.62,density:.58,organicity:.42,sacred:.10} },
+    { id:34, title:"Running Up That Hill",       artist:"Kate Bush",                 P:{energy:.58,warmth:.55,density:.65,organicity:.52,sacred:.25} },
+    { id:35, title:"Hoppípolla",                 artist:"Sigur Rós",                 P:{energy:.55,warmth:.72,density:.55,organicity:.65,sacred:.48} },
+    { id:36, title:"Cranes in the Sky",          artist:"Solange",                   P:{energy:.32,warmth:.72,density:.42,organicity:.65,sacred:.28} },
+    { id:37, title:"Loud Places",               artist:"Jamie xx",                   P:{energy:.50,warmth:.48,density:.58,organicity:.42,sacred:.18} },
+
+    // High intensity
+    { id:38, title:"Lateralus",                  artist:"Tool",                      P:{energy:.88,warmth:.38,density:.88,organicity:.28,sacred:.08} },
+    { id:39, title:"One More Time",              artist:"Daft Punk",                 P:{energy:.82,warmth:.55,density:.75,organicity:.20,sacred:.05} },
+    { id:40, title:"Get Lucky",                  artist:"Daft Punk",                 P:{energy:.72,warmth:.65,density:.68,organicity:.38,sacred:.08} },
+    { id:41, title:"Windowlicker [extended]",    artist:"Aphex Twin",                P:{energy:.72,warmth:.22,density:.78,organicity:.18,sacred:.04} },
+  ];
+
+  // ─────────────────────────────────────────
+  // INTENT MAP — keywords → acoustic signatures
+  // ─────────────────────────────────────────
+  const INTENT_MAP = [
+    { kw:['late night','midnight','3am','nocturnal','insomnia','sleepless'],   W:1.5, P:{energy:.18,warmth:.40,density:.38,organicity:.48,sacred:.40} },
+    { kw:['focus','work','study','concentrate','deep work','productive'],      W:1.2, P:{energy:.25,warmth:.48,density:.40,organicity:.40,sacred:.30} },
+    { kw:['run','running','workout','gym','exercise','sprint','high energy'],  W:1.5, P:{energy:.86,warmth:.45,density:.75,organicity:.25,sacred:.05} },
+    { kw:['sad','melancholy','cry','heartbreak','grief','lonely','lost'],      W:1.3, P:{energy:.15,warmth:.42,density:.28,organicity:.72,sacred:.38} },
+    { kw:['happy','joy','euphoric','celebrate','dance','party','fun','uplifting'], W:1.3, P:{energy:.80,warmth:.65,density:.70,organicity:.35,sacred:.08} },
+    { kw:['meditate','meditation','peace','calm','relax','breathe','still','quiet'], W:1.4, P:{energy:.08,warmth:.60,density:.20,organicity:.50,sacred:.72} },
+    { kw:['organic','natural','earthy','folk','acoustic','forest','wood','roots'], W:1.3, P:{energy:.30,warmth:.80,density:.30,organicity:.90,sacred:.22} },
+    { kw:['jazz','smoky','blue','cool','bossa'],                               W:1.2, P:{energy:.25,warmth:.72,density:.38,organicity:.70,sacred:.20} },
+    { kw:['spiritual','sacred','transcendent','holy','cathedral','divine','ritual','devotional'], W:1.4, P:{energy:.12,warmth:.65,density:.35,organicity:.45,sacred:.88} },
+    { kw:['driving','road trip','highway','cruise','open road'],               W:1.1, P:{energy:.62,warmth:.55,density:.55,organicity:.40,sacred:.10} },
+    { kw:['morning','sunrise','waking','coffee','gentle start','soft'],        W:1.2, P:{energy:.25,warmth:.72,density:.25,organicity:.65,sacred:.30} },
+    { kw:['intense','aggressive','raw','powerful','heavy','brutal','hard'],    W:1.3, P:{energy:.90,warmth:.30,density:.88,organicity:.25,sacred:.05} },
+    { kw:['dreamy','hazy','floating','ethereal','drift','shoegaze','woozy'],   W:1.3, P:{energy:.30,warmth:.52,density:.68,organicity:.45,sacred:.40} },
+    { kw:['warm','cozy','home','comfort','intimate','fire','hearth','snug'],   W:1.2, P:{energy:.22,warmth:.88,density:.25,organicity:.78,sacred:.25} },
+    { kw:['electronic','synth','digital','futuristic','machine','cold'],       W:1.2, P:{energy:.60,warmth:.22,density:.68,organicity:.12,sacred:.08} },
+    { kw:['minimal','stripped','bare','sparse','empty','silence'],             W:1.1, P:{energy:.10,warmth:.55,density:.15,organicity:.55,sacred:.48} },
+    { kw:['classical','orchestral','string','piano','chamber'],               W:1.2, P:{energy:.28,warmth:.65,density:.45,organicity:.60,sacred:.50} },
+    { kw:['dark','murky','shadow','noir','bleak','grim'],                     W:1.2, P:{energy:.35,warmth:.20,density:.55,organicity:.32,sacred:.30} },
+  ];
+
+  // ─────────────────────────────────────────
+  // NEGATION MODIFIERS
+  // "not too X" → scale dimension toward center
+  // ─────────────────────────────────────────
+  const NEGATION_PAIRS = [
+    { kw:['not too quiet','not quiet','not boring','not too calm','not too soft'], adj:{energy:+0.18, density:+0.12} },
+    { kw:['not too loud','not loud','not noisy','not intense','not harsh'],        adj:{energy:-0.20, density:-0.15} },
+    { kw:['not electronic','not synthetic','not digital','not too cold'],          adj:{warmth:+0.20, organicity:+0.20} },
+    { kw:['not folk','not acoustic','not organic','not earthy'],                   adj:{organicity:-0.22, warmth:-0.10} },
+    { kw:['not dark','not sad','not heavy','not bleak'],                           adj:{warmth:+0.18, energy:+0.05} },
+    { kw:['not sacred','not spiritual','not religious'],                           adj:{sacred:-0.35} },
+    { kw:['not happy','not upbeat','not energetic'],                               adj:{energy:-0.25} },
+  ];
+
+  // ─────────────────────────────────────────
+  // DIM WEIGHTS for distance calculation
+  // ─────────────────────────────────────────
+  const DIM_WEIGHTS = { energy:1.6, warmth:1.4, density:1.0, organicity:1.1, sacred:1.2 };
+  const DIMS = ['energy','warmth','density','organicity','sacred'];
+
+  // ─────────────────────────────────────────
+  // STATE
+  // ─────────────────────────────────────────
+  let territory = new Set();   // track ids
+  let currentRecs = [];        // ids of recommended tracks
+  let currentTarget = null;    // derived 5D acoustic coordinates {energy,...}
+
+  // ─────────────────────────────────────────
+  // INTENT PARSER
+  // ─────────────────────────────────────────
+  function parseIntent(text) {
+    const t = text.toLowerCase();
+
+    // Find matching intents and their weight sum
+    let weightedSum = { energy:0, warmth:0, density:0, organicity:0, sacred:0 };
+    let totalWeight = 0;
+
+    INTENT_MAP.forEach(intent => {
+      const matchCount = intent.kw.filter(k => t.includes(k)).length;
+      if (matchCount > 0) {
+        const w = intent.W * matchCount;
+        DIMS.forEach(d => { weightedSum[d] += intent.P[d] * w; });
+        totalWeight += w;
+      }
+    });
+
+    // Fallback: try individual words against all keywords
+    if (totalWeight === 0) {
+      const words = t.split(/\W+/).filter(w => w.length > 3);
+      words.forEach(word => {
+        INTENT_MAP.forEach(intent => {
+          const match = intent.kw.some(k => k.includes(word) || word.includes(k.split(' ')[0]));
+          if (match) {
+            DIMS.forEach(d => { weightedSum[d] += intent.P[d] * 0.5; });
+            totalWeight += 0.5;
+          }
+        });
+      });
+    }
+
+    // If still nothing, center of space
+    if (totalWeight === 0) {
+      return { energy:0.4, warmth:0.55, density:0.40, organicity:0.55, sacred:0.30 };
+    }
+
+    const target = {};
+    DIMS.forEach(d => { target[d] = weightedSum[d] / totalWeight; });
+
+    // Apply negation modifiers
+    NEGATION_PAIRS.forEach(neg => {
+      if (neg.kw.some(k => t.includes(k))) {
+        Object.entries(neg.adj).forEach(([d, delta]) => {
+          if (target[d] !== undefined) {
+            target[d] = Math.max(0, Math.min(1, target[d] + delta));
+          }
+        });
+      }
+    });
+
+    return target;
+  }
+
+  // ─────────────────────────────────────────
+  // RECOMMENDATION ALGORITHM
+  // Weighted Euclidean distance in 5D acoustic space
+  // Territory bias: deprioritise tracks already saved
+  // ─────────────────────────────────────────
+  function recommend(target, n = 5) {
+    // Compute acoustic centroid of territory (if any)
+    let territoryCentroid = null;
+    if (territory.size > 0) {
+      const tTracks = [...territory].map(id => TRACKS.find(t => t.id === id)).filter(Boolean);
+      territoryCentroid = {};
+      DIMS.forEach(d => {
+        territoryCentroid[d] = tTracks.reduce((s, t) => s + t.P[d], 0) / tTracks.length;
+      });
+    }
+
+    const scored = TRACKS.map(track => {
+      // Distance from target
+      let distTarget = 0;
+      DIMS.forEach(d => {
+        const diff = (track.P[d] - target[d]) * DIM_WEIGHTS[d];
+        distTarget += diff * diff;
+      });
+      distTarget = Math.sqrt(distTarget);
+
+      // Territory proximity bonus (closer to centroid = slight boost)
+      let territoryBonus = 0;
+      if (territoryCentroid) {
+        let distTerr = 0;
+        DIMS.forEach(d => {
+          const diff = (track.P[d] - territoryCentroid[d]) * DIM_WEIGHTS[d];
+          distTerr += diff * diff;
+        });
+        // Bonus: reduce effective distance for territory-adjacent tracks
+        territoryBonus = -Math.sqrt(distTerr) * 0.18;
+      }
+
+      const score = distTarget + territoryBonus;
+      return { track, score, distTarget };
+    });
+
+    // Filter out territory tracks, sort by score
+    return scored
+      .filter(s => !territory.has(s.track.id))
+      .sort((a, b) => a.score - b.score)
+      .slice(0, n)
+      .map(s => s.track.id);
+  }
+
+  // ─────────────────────────────────────────
+  // ACOUSTIC MAP RENDERER
+  // 2D: X = energy, Y = warmth (inverted so warm = top)
+  // ─────────────────────────────────────────
+  const canvas = document.getElementById('acoustic-map');
+  const ctx = canvas.getContext('2d');
+  const PAD = { l:40, r:24, t:20, b:28 };
+
+  function toCanvasX(energy) { return PAD.l + energy * (canvas.width - PAD.l - PAD.r); }
+  function toCanvasY(warmth)  { return PAD.t + (1 - warmth) * (canvas.height - PAD.t - PAD.b); }
+
+  function dimColor(P) {
+    // HSL: warmth controls hue (230=cold blue → 35=amber), energy controls lightness
+    const hue = P.warmth * 35 + (1 - P.warmth) * 230;
+    const sat = 40 + P.energy * 35;
+    const lit = 38 + P.energy * 20;
+    return `hsl(${hue},${sat}%,${lit}%)`;
+  }
+
+  function drawMap() {
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Background gradient
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, 'rgba(10,10,20,0.95)');
+    bg.addColorStop(1, 'rgba(14,12,24,0.95)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(240,237,230,0.06)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const x = toCanvasX(i / 4);
+      ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, H - PAD.b); ctx.stroke();
+      const y = toCanvasY(i / 4);
+      ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+    }
+
+    // Axis labels
+    ctx.fillStyle = 'rgba(240,237,230,0.25)';
+    ctx.font = '9px Space Mono';
+    ctx.textAlign = 'right';
+    ctx.fillText('warm', PAD.l - 4, toCanvasY(0.95) + 3);
+    ctx.fillText('cool', PAD.l - 4, toCanvasY(0.05) + 3);
+
+    // Draw target zone if active
+    if (currentTarget) {
+      const tx = toCanvasX(currentTarget.energy);
+      const ty = toCanvasY(currentTarget.warmth);
+      // Soft halo
+      const gr = ctx.createRadialGradient(tx, ty, 0, tx, ty, 54);
+      gr.addColorStop(0, 'rgba(240,160,64,0.14)');
+      gr.addColorStop(1, 'rgba(240,160,64,0)');
+      ctx.fillStyle = gr;
+      ctx.fillRect(tx - 60, ty - 60, 120, 120);
+      // Crosshair
+      ctx.strokeStyle = 'rgba(240,160,64,0.3)';
+      ctx.setLineDash([3,3]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(tx, PAD.t); ctx.lineTo(tx, H - PAD.b); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(PAD.l, ty); ctx.lineTo(W - PAD.r, ty); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw all tracks (base layer)
+    TRACKS.forEach(track => {
+      const x = toCanvasX(track.P.energy);
+      const y = toCanvasY(track.P.warmth);
+      const r = 3 + track.P.density * 2.5;
+      const isRec = currentRecs.includes(track.id);
+      const isTer = territory.has(track.id);
+
+      if (isRec || isTer) return; // draw these on top
+
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = dimColor(track.P).replace(')', ',0.45)').replace('hsl', 'hsla');
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(240,237,230,0.08)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    });
+
+    // Territory tracks (teal, slightly larger)
+    territory.forEach(id => {
+      const track = TRACKS.find(t => t.id === id);
+      if (!track) return;
+      const x = toCanvasX(track.P.energy);
+      const y = toCanvasY(track.P.warmth);
+      const r = 5 + track.P.density * 2;
+
+      ctx.beginPath(); ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,229,196,0.12)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,229,196,0.75)'; ctx.fill();
+      ctx.strokeStyle = 'rgba(0,229,196,0.9)';
+      ctx.lineWidth = 1; ctx.stroke();
+    });
+
+    // Recommended tracks (amber, glowing)
+    currentRecs.forEach((id, rank) => {
+      const track = TRACKS.find(t => t.id === id);
+      if (!track) return;
+      const x = toCanvasX(track.P.energy);
+      const y = toCanvasY(track.P.warmth);
+      const r = 5 + track.P.density * 3;
+
+      // Glow
+      const gr2 = ctx.createRadialGradient(x, y, 0, x, y, r + 8);
+      gr2.addColorStop(0, 'rgba(240,160,64,0.45)');
+      gr2.addColorStop(1, 'rgba(240,160,64,0)');
+      ctx.fillStyle = gr2;
+      ctx.beginPath(); ctx.arc(x, y, r + 8, 0, Math.PI * 2); ctx.fill();
+
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(240,160,64,${0.95 - rank * 0.08})`; ctx.fill();
+      ctx.strokeStyle = 'rgba(255,200,100,0.9)';
+      ctx.lineWidth = 1; ctx.stroke();
+
+      // Rank label
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 8px Space Mono';
+      ctx.textAlign = 'center';
+      ctx.fillText(rank + 1, x, y + 3);
+    });
+
+    // Target crosshair dot
+    if (currentTarget) {
+      const tx = toCanvasX(currentTarget.energy);
+      const ty = toCanvasY(currentTarget.warmth);
+      ctx.beginPath(); ctx.arc(tx, ty, 4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(240,160,64,0.9)'; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  }
+
+  // ─────────────────────────────────────────
+  // UI — show derived coordinates
+  // ─────────────────────────────────────────
+  function showReadout(target) {
+    document.getElementById('readout-empty').style.display = 'none';
+    document.getElementById('acoustic-readout').style.display = 'flex';
+    DIMS.forEach(d => {
+      const v = target[d];
+      document.getElementById('fill-' + d).style.width = (v * 100) + '%';
+      document.getElementById('val-' + d).textContent = v.toFixed(2);
+    });
+  }
+
+  // ─────────────────────────────────────────
+  // UI — render recommendation cards
+  // ─────────────────────────────────────────
+  const DIM_COLORS = { energy:'#00e5c4', warmth:'#e07050', density:'#8868cc', organicity:'#60b860', sacred:'#b088e8' };
+
+  function renderRecs(recIds, target) {
+    const container = document.getElementById('recs-container');
+    if (recIds.length === 0) {
+      container.innerHTML = '<div class="recs-empty">No matching tracks found — try a different description.</div>';
+      return;
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'recs-grid';
+
+    recIds.forEach((id, i) => {
+      const track = TRACKS.find(t => t.id === id);
+      if (!track) return;
+
+      const card = document.createElement('div');
+      card.className = 'rec-card';
+      card.dataset.id = id;
+
+      // Rank
+      const rank = document.createElement('div');
+      rank.className = 'rec-rank';
+      rank.textContent = `#${i+1} MATCH`;
+
+      // Title + artist
+      const title = document.createElement('div');
+      title.className = 'rec-title';
+      title.textContent = track.title;
+      const artist = document.createElement('div');
+      artist.className = 'rec-artist';
+      artist.textContent = track.artist;
+
+      // Acoustic dims
+      const dims = document.createElement('div');
+      dims.className = 'rec-dims';
+      DIMS.forEach(d => {
+        const row = document.createElement('div');
+        row.className = 'rec-dim-row';
+        const label = document.createElement('span');
+        label.className = 'rec-dim-label';
+        label.textContent = d.charAt(0).toUpperCase() + d.slice(1,3);
+        const bar = document.createElement('div');
+        bar.className = 'rec-dim-bar';
+        const fill = document.createElement('div');
+        fill.className = 'rec-dim-fill';
+        fill.style.width = (track.P[d] * 100) + '%';
+        fill.style.background = DIM_COLORS[d];
+        bar.appendChild(fill);
+        row.appendChild(label); row.appendChild(bar);
+        dims.appendChild(row);
+      });
+
+      // Save button
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'rec-save-btn' + (territory.has(id) ? ' saved' : '');
+      saveBtn.textContent = territory.has(id) ? '✓ IN TERRITORY' : '+ SAVE TO TERRITORY';
+      saveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleTerritory(id, saveBtn);
+      });
+
+      card.appendChild(rank); card.appendChild(title); card.appendChild(artist);
+      card.appendChild(dims); card.appendChild(saveBtn);
+      grid.appendChild(card);
+    });
+
+    container.innerHTML = '';
+    container.appendChild(grid);
+
+    // Update hint
+    const hint = document.getElementById('recs-hint');
+    const distances = recIds.map(id => {
+      const track = TRACKS.find(t => t.id === id);
+      let d = 0;
+      DIMS.forEach(dim => { const diff = track.P[dim] - target[dim]; d += diff*diff*DIM_WEIGHTS[dim]; });
+      return Math.sqrt(d);
+    });
+    const avgDist = distances.reduce((s,v) => s+v, 0) / distances.length;
+    hint.textContent = avgDist < 0.4 ? 'Strong acoustic match' : avgDist < 0.7 ? 'Moderate match' : 'Exploring broader space';
+  }
+
+  // ─────────────────────────────────────────
+  // TERRITORY MANAGEMENT
+  // ─────────────────────────────────────────
+  function toggleTerritory(id, btn) {
+    if (territory.has(id)) {
+      territory.delete(id);
+    } else {
+      territory.add(id);
+    }
+    renderTerritoryList();
+    drawMap();
+    // Update all save buttons for this id
+    document.querySelectorAll('.rec-save-btn').forEach(b => {
+      const card = b.closest('.rec-card');
+      if (card && parseInt(card.dataset.id) === id) {
+        b.textContent = territory.has(id) ? '✓ IN TERRITORY' : '+ SAVE TO TERRITORY';
+        b.className = 'rec-save-btn' + (territory.has(id) ? ' saved' : '');
+      }
+    });
+  }
+
+  function renderTerritoryList() {
+    const list = document.getElementById('territory-list');
+    const count = document.getElementById('territory-count');
+    count.textContent = territory.size > 0 ? `(${territory.size})` : '';
+
+    if (territory.size === 0) {
+      list.innerHTML = '<div class="territory-empty">Save tracks to build your acoustic territory — it\'ll bias future recommendations toward your proven taste.</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    [...territory].forEach(id => {
+      const track = TRACKS.find(t => t.id === id);
+      if (!track) return;
+      const item = document.createElement('div');
+      item.className = 'territory-item';
+      const info = document.createElement('div');
+      info.className = 'territory-item-info';
+      const tt = document.createElement('div'); tt.className = 'territory-track'; tt.textContent = track.title;
+      const ta = document.createElement('div'); ta.className = 'territory-artist'; ta.textContent = track.artist;
+      info.appendChild(tt); info.appendChild(ta);
+      const rm = document.createElement('button'); rm.className = 'territory-remove';
+      rm.textContent = '×'; rm.title = 'Remove from territory';
+      rm.addEventListener('click', () => toggleTerritory(id, null));
+      item.appendChild(info); item.appendChild(rm);
+      list.appendChild(item);
+    });
+  }
+
+  // ─────────────────────────────────────────
+  // MAP TOOLTIP on hover
+  // ─────────────────────────────────────────
+  const tooltip = document.getElementById('tooltip');
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top) * scaleY;
+
+    let closest = null, minDist = Infinity;
+    TRACKS.forEach(track => {
+      const tx = toCanvasX(track.P.energy);
+      const ty = toCanvasY(track.P.warmth);
+      const d = Math.hypot(mx - tx, my - ty);
+      if (d < minDist) { minDist = d; closest = track; }
+    });
+
+    if (closest && minDist < 18) {
+      document.getElementById('tt-title').textContent = closest.title;
+      document.getElementById('tt-artist').textContent = closest.artist;
+      tooltip.style.left = (e.clientX + 14) + 'px';
+      tooltip.style.top = (e.clientY - 8) + 'px';
+      tooltip.classList.add('visible');
+    } else {
+      tooltip.classList.remove('visible');
+    }
+  });
+  canvas.addEventListener('mouseleave', () => tooltip.classList.remove('visible'));
+
+  // Click track on map → toggle territory
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top) * scaleY;
+
+    let closest = null, minDist = Infinity;
+    TRACKS.forEach(track => {
+      const tx = toCanvasX(track.P.energy);
+      const ty = toCanvasY(track.P.warmth);
+      const d = Math.hypot(mx - tx, my - ty);
+      if (d < minDist) { minDist = d; closest = track; }
+    });
+
+    if (closest && minDist < 16) {
+      toggleTerritory(closest.id, null);
+    }
+  });
+
+  // ─────────────────────────────────────────
+  // MAIN SEARCH
+  // ─────────────────────────────────────────
+  function runSearch() {
+    const text = document.getElementById('intent-input').value.trim();
+    if (!text) return;
+
+    const target = parseIntent(text);
+    currentTarget = target;
+    currentRecs = recommend(target, 5);
+
+    showReadout(target);
+    renderRecs(currentRecs, target);
+    drawMap();
+  }
+
+  document.getElementById('find-btn').addEventListener('click', runSearch);
+  document.getElementById('intent-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runSearch();
+  });
+
+  // Prompt chips
+  document.querySelectorAll('.prompt-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.getElementById('intent-input').value = chip.dataset.prompt;
+      runSearch();
+    });
+  });
+
+  // ─────────────────────────────────────────
+  // INIT
+  // ─────────────────────────────────────────
+  drawMap();
+
+})();
+</script>
+</body>
+</html>

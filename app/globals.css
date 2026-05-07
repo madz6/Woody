@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  background: #0F0F0D;
+  color: #E8E4DC;
+}
+
+::selection {
+  background: rgba(124, 107, 206, 0.25);
+}
+
+::-webkit-scrollbar { width: 0; }
+
+/* ─── Context-aware ambient tint tokens ─── */
+:root {
+  --tint-running:   #5c3010;
+  --tint-working:   #0a1530;
+  --tint-exploring: #0a2015;
+  --ambient-tint:   rgba(0, 0, 0, 0);
+}
+
+/* ─── Session palette atmosphere shifts ─── */
+[data-palette="dark-violet"] { --ambient-tint: rgba(124, 107, 206, 0.04); }
+[data-palette="warm-amber"]  { --ambient-tint: rgba(196, 135, 74,  0.04); }
+[data-palette="cool-moss"]   { --ambient-tint: rgba(78,  107, 69,  0.04); }
+[data-palette="neutral"]     { --ambient-tint: rgba(0, 0, 0, 0); }
+
+@layer components {
+  /* ─── Glass materials ─── */
+  .glass {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: rgba(30, 27, 24, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .glass-heavy {
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    background: rgba(30, 27, 24, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  /* ─── Typography helpers ─── */
+  .display-text {
+    font-family: var(--font-lora), serif;
+    font-style: italic;
+    font-size: 36px;
+    line-height: 1.15;
+    color: #E8E4DC;
+  }
+
+  .label-caps {
+    font-size: 10px;
+    line-height: 1.4;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8A8680;
+  }
+}

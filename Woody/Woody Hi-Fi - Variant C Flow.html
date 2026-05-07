@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en" data-palette="energetic">
+<head>
+<template id="__bundler_thumbnail" data-bg-color="#0F0F0D">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0F0F0D"/>
+    <g transform="translate(600 400)">
+      <circle r="240" fill="none" stroke="#E8E4DC" stroke-opacity="0.08" stroke-width="1.2"/>
+      <circle r="180" fill="none" stroke="#E8E4DC" stroke-opacity="0.08" stroke-width="1" stroke-dasharray="3 12"/>
+      <circle r="120" fill="none" stroke="#E8E4DC" stroke-opacity="0.06" stroke-width="0.8" stroke-dasharray="2 10"/>
+      <path d="M -240 -80 A 252 252 0 0 1 80 -240" fill="none" stroke="#C4874A" stroke-opacity="0.18" stroke-width="32" stroke-linecap="round"/>
+      <line x1="0" y1="0" x2="-110" y2="-150" stroke="#E8E4DC" stroke-opacity="0.18" stroke-width="0.9"/>
+      <circle cx="-110" cy="-150" r="36" fill="#C4874A" opacity="0.20"/>
+      <circle cx="-110" cy="-150" r="11" fill="#C4874A" stroke="#E8E4DC" stroke-opacity="0.4"/>
+      <text y="320" text-anchor="middle" font-family="Lora, serif" font-style="italic" font-size="38" fill="#E8E4DC">woody</text>
+    </g>
+  </svg>
+</template>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Woody — Variant C · Hi-Fi Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;1,400;1,500&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  :root {
+    /* Layer 1 — base (warm soil) */
+    --soil:        #0F0F0D;
+    --moss:        #171713;
+    --bark:        #1E1B18;
+    --bark-light:  #2A2520;
+    /* Layer 2 — accents */
+    --violet: #7C6BCE;
+    --amber:  #C4874A;
+    --green:  #4E6B45;
+    --rose:   #8C5C5C;
+    /* Layer 3 — text */
+    --hi:  #E8E4DC;
+    --mid: #8A8680;
+    --lo:  #4A4844;
+    /* page (canvas around the phones) */
+    --page: #0B0B09;
+    --page-2: #131210;
+    --page-edge: rgba(232,228,220,.06);
+    /* dynamic palette anchor (set by data-palette) */
+    --tone: var(--violet);
+  }
+  html[data-palette="nocturnal"] { --tone: var(--violet); }
+  html[data-palette="energetic"] { --tone: var(--amber); }
+  html[data-palette="earthy"]    { --tone: var(--green); }
+  html[data-palette="emotional"] { --tone: var(--rose); }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; background: var(--page); color: var(--hi);
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+  body { background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(124,107,206,.06), transparent 60%),
+    radial-gradient(900px 700px at 110% 110%, rgba(196,135,74,.04), transparent 60%),
+    var(--page);
+  }
+
+  /* ============== PAGE CHROME ============== */
+  .pagehead {
+    padding: 80px 64px 32px;
+    border-bottom: 1px solid var(--page-edge);
+    max-width: 1280px; margin: 0 auto;
+  }
+  .eyebrow {
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--mid); font-weight: 500;
+  }
+  .pagehead h1 {
+    font-family: 'Lora', serif; font-style: italic; font-weight: 400;
+    font-size: 44px; line-height: 1.14; margin: 14px 0 14px;
+    color: var(--hi); max-width: 920px; letter-spacing: -.01em;
+  }
+  .pagehead .lede {
+    font-size: 15.5px; line-height: 1.6; color: var(--mid);
+    max-width: 720px; margin: 0;
+  }
+  .pagehead .meta {
+    margin-top: 24px; display: flex; flex-wrap: wrap; gap: 28px;
+    font-size: 12px; color: var(--mid);
+  }
+  .pagehead .meta b { color: var(--hi); font-weight: 500; }
+
+  .section {
+    max-width: 1280px; margin: 0 auto;
+    padding: 56px 64px 8px;
+  }
+  .section-head {
+    display: flex; align-items: baseline; gap: 18px; margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .section-head .num {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--mid); font-variant-numeric: tabular-nums;
+    border: 1px solid var(--page-edge); padding: 6px 10px; border-radius: 999px;
+  }
+  .section-head h2 {
+    font-family: 'Lora', serif; font-style: italic; font-weight: 400;
+    font-size: 26px; margin: 0; color: var(--hi); letter-spacing: -.005em;
+  }
+  .section-head .kicker { font-size: 13px; color: var(--mid); }
+
+  .row {
+    display: grid; grid-template-columns: 320px 1fr; gap: 56px;
+    align-items: start; padding: 28px 0;
+    border-top: 1px solid var(--page-edge);
+  }
+  .row:first-of-type { border-top: 0; }
+  @media (max-width: 1080px) { .row { grid-template-columns: 1fr; gap: 28px; } }
+
+  .row .stage { position: relative; }
+  .row .desc { padding-top: 8px; }
+  .row .desc h3 {
+    font-family: 'Lora', serif; font-style: italic; font-weight: 500;
+    font-size: 22px; margin: 0 0 10px; color: var(--hi); letter-spacing: -.005em;
+  }
+  .row .desc .small {
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--mid); margin-bottom: 10px; font-weight: 500;
+  }
+  .row .desc p { font-size: 14.5px; line-height: 1.6; color: var(--mid); margin: 0 0 14px; max-width: 540px; }
+  .row .desc .annot {
+    font-size: 12.5px; line-height: 1.55; color: var(--lo);
+    border-left: 1px solid var(--page-edge);
+    padding: 6px 0 6px 14px; margin: 14px 0 0;
+  }
+  .row .desc .annot b { color: var(--mid); font-weight: 500; }
+  .row .desc dl { margin: 16px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 12px; }
+  .row .desc dt { color: var(--lo); letter-spacing: .08em; text-transform: uppercase; font-size: 10px; padding-top: 2px; }
+  .row .desc dd { color: var(--mid); margin: 0; }
+
+  /* ============== PHONE FRAME ============== */
+  .phone {
+    --pw: 320px; --ph: 690px;
+    width: var(--pw); height: var(--ph);
+    border-radius: 44px;
+    background: var(--soil);
+    position: relative; overflow: hidden;
+    box-shadow:
+      0 0 0 1.5px rgba(232,228,220,.06),
+      0 0 0 8px rgba(15,15,13,.9),
+      0 0 0 9px rgba(232,228,220,.05),
+      0 30px 60px -20px rgba(0,0,0,.6),
+      0 80px 120px -30px rgba(0,0,0,.5);
+    isolation: isolate;
+  }
+  .phone .notch {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    width: 96px; height: 28px; border-radius: 999px;
+    background: #050504; z-index: 30;
+  }
+  .phone .statusbar {
+    position: absolute; top: 0; left: 0; right: 0; height: 50px; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 28px 0;
+    font-size: 11px; color: var(--hi); font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .phone .statusbar .left { font-weight: 500; }
+  .phone .statusbar .right { display: flex; gap: 5px; align-items: center; opacity: .85; }
+  .phone .statusbar .right svg { display: block; }
+  .phone .scene {
+    position: absolute; inset: 0; overflow: hidden; border-radius: 44px;
+    isolation: isolate;
+  }
+
+  /* warm dark base + atmosphere */
+  .scene-bg {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(120% 70% at 50% 20%, rgba(124,107,206,.10), transparent 65%),
+      radial-gradient(140% 90% at 50% 110%, rgba(196,135,74,.05), transparent 60%),
+      var(--soil);
+  }
+  .scene-noise {
+    position: absolute; inset: 0; opacity: .25; mix-blend-mode: overlay;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.7  0 0 0 0 0.65  0 0 0 0 0.55  0 0 0 0.07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+
+  /* halo */
+  .halo {
+    position: absolute; top: 60px; right: 18px; z-index: 25;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(30,27,24,.85);
+    border: 1px solid rgba(232,228,220,.08);
+    backdrop-filter: blur(12px);
+    display: grid; place-items: center;
+    box-shadow:
+      inset 0 0 12px rgba(124,107,206,.18),
+      0 0 22px rgba(124,107,206,.12);
+  }
+  .halo svg { width: 18px; height: 18px; opacity: .9; }
+  .halo svg path, .halo svg circle { stroke: var(--hi); fill: none; stroke-width: 1.2; }
+
+  /* the dial */
+  .dial-wrap { position: absolute; inset: 0; }
+  .dial-svg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  .dial-svg .ring { fill: none; stroke: rgba(232,228,220,.10); stroke-width: 1; }
+  .dial-svg .ring-2 { stroke: rgba(232,228,220,.06); stroke-dasharray: 1 4; }
+  .dial-svg .ring-3 { stroke: rgba(232,228,220,.04); stroke-dasharray: 1 5; }
+  .dial-svg .tick { stroke: rgba(232,228,220,.18); stroke-width: 1; stroke-linecap: round; }
+  .dial-svg .tick-major { stroke: rgba(232,228,220,.4); stroke-width: 1.4; }
+  .dial-svg .density { fill: none; stroke: var(--tone); opacity: .26; stroke-linecap: round; }
+  .dial-svg .density.faint { opacity: .14; }
+  .dial-svg .stem { stroke: rgba(232,228,220,.22); stroke-width: 1; }
+  .dial-svg .bead { fill: var(--tone); }
+  .dial-svg .bead-glow { fill: var(--tone); opacity: .45; filter: blur(6px); }
+  .dial-svg .bead-ring { fill: none; stroke: var(--tone); opacity: .35; stroke-dasharray: 1 3; }
+  .dial-svg .facet { fill: var(--mid); font: 500 9px 'Inter', sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+  .dial-svg .word { fill: var(--hi); font: italic 400 14px 'Lora', serif; }
+  .dial-svg .word-faint { fill: var(--mid); }
+
+  /* center caption */
+  .caption {
+    position: absolute; left: 0; right: 0; bottom: 168px;
+    text-align: center; padding: 0 28px;
+    color: var(--hi);
+  }
+  .caption .word {
+    font-family: 'Lora', serif; font-style: italic; font-weight: 400;
+    font-size: 19px; line-height: 1.3; letter-spacing: -.01em;
+  }
+  .caption .sub {
+    margin-top: 8px; font-size: 11.5px; color: var(--mid); line-height: 1.5;
+  }
+
+  /* bottom bar (intent / mini-player) */
+  .bottom {
+    position: absolute; left: 16px; right: 16px; bottom: 28px; z-index: 20;
+  }
+  .input {
+    height: 54px; border-radius: 27px;
+    background: rgba(30,27,24,.78);
+    border: 1px solid rgba(232,228,220,.06);
+    backdrop-filter: blur(20px);
+    display: flex; align-items: center; padding: 0 22px; gap: 12px;
+    color: var(--mid); font-size: 14px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.45);
+  }
+  .input .ph { color: var(--mid); font-weight: 400; }
+  .input .ph i { color: var(--mid); font-style: italic; }
+  .input .icon { width: 18px; height: 18px; opacity: .55; }
+  .input.right-affordance { padding-right: 8px; }
+  .atlas-pill {
+    margin-left: auto; height: 38px; padding: 0 14px; border-radius: 19px;
+    background: rgba(15,15,13,.7);
+    border: 1px solid rgba(232,228,220,.08);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; color: var(--mid); letter-spacing: .04em;
+    flex-shrink: 0;
+  }
+  .atlas-pill .glyph { width: 14px; height: 14px; opacity: .85; }
+
+  /* mini-player */
+  .miniplayer {
+    height: 64px; border-radius: 32px;
+    background: rgba(30,27,24,.82);
+    border: 1px solid rgba(232,228,220,.07);
+    backdrop-filter: blur(20px);
+    display: flex; align-items: center; padding: 8px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.5);
+    gap: 12px;
+  }
+  .miniplayer .art {
+    width: 48px; height: 48px; border-radius: 14px;
+    background: linear-gradient(135deg, #2a2520, #1a1814);
+    flex-shrink: 0; position: relative; overflow: hidden;
+    border: 1px solid rgba(232,228,220,.06);
+  }
+  .miniplayer .art::after {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(circle at 30% 30%, rgba(124,107,206,.4), transparent 60%);
+  }
+  .miniplayer .meta { flex: 1; min-width: 0; }
+  .miniplayer .meta .t { font-size: 13px; font-weight: 500; color: var(--hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .miniplayer .meta .a { font-size: 11px; color: var(--mid); margin-top: 1px; }
+  .miniplayer .shift {
+    height: 36px; padding: 0 14px; border-radius: 18px;
+    background: rgba(15,15,13,.7);
+    border: 1px solid rgba(232,228,220,.08);
+    color: var(--mid); font-size: 11.5px; letter-spacing: .02em;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .miniplayer .shift .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 8px var(--tone); }
+
+  /* SAVE — naming overlay */
+  .save-overlay {
+    position: absolute; inset: 0; z-index: 22;
+    background: rgba(15,15,13,.92);
+    backdrop-filter: blur(20px);
+    display: flex; flex-direction: column; align-items: center; padding: 0 36px;
+  }
+  .save-overlay .top { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--lo); margin-top: 80px; }
+  .save-overlay .pinmark {
+    margin-top: 48px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--tone); position: relative;
+    box-shadow: 0 0 24px var(--tone);
+  }
+  .save-overlay .pinmark::before, .save-overlay .pinmark::after {
+    content:""; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    border: 1px solid var(--tone); border-radius: 50%; opacity: .4;
+  }
+  .save-overlay .pinmark::before { width: 36px; height: 36px; }
+  .save-overlay .pinmark::after  { width: 64px; height: 64px; opacity: .2; }
+  .save-overlay .prompt {
+    margin-top: 64px; font-family: 'Lora', serif; font-style: italic; font-weight: 400;
+    font-size: 18px; color: var(--mid); text-align: center;
+  }
+  .save-overlay .name {
+    margin-top: 18px; font-family: 'Lora', serif; font-style: italic; font-weight: 500;
+    font-size: 34px; color: var(--hi); text-align: center; letter-spacing: -.01em;
+    border-bottom: 1px solid rgba(232,228,220,.18); padding-bottom: 4px;
+    min-width: 200px;
+  }
+  .save-overlay .name .caret {
+    display: inline-block; width: 1.5px; height: 28px; background: var(--tone);
+    vertical-align: middle; margin-left: 4px; transform: translateY(2px);
+  }
+  .save-overlay .help { margin-top: 16px; font-size: 11.5px; color: var(--lo); text-align: center; }
+  .save-overlay .actions {
+    position: absolute; left: 16px; right: 16px; bottom: 28px;
+    display: flex; gap: 10px;
+  }
+  .save-overlay .btn {
+    flex: 1; height: 50px; border-radius: 25px;
+    border: 1px solid rgba(232,228,220,.10);
+    background: rgba(30,27,24,.8);
+    color: var(--mid); font-size: 13px; letter-spacing: .02em;
+    display: grid; place-items: center;
+  }
+  .save-overlay .btn.primary {
+    background: rgba(124,107,206,.16);
+    border-color: rgba(124,107,206,.3);
+    color: var(--hi);
+  }
+
+  /* ATLAS — weekly */
+  .atlas-scene {
+    position: absolute; inset: 0;
+  }
+  .atlas-bg {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(60% 50% at 50% 36%, rgba(124,107,206,.16), transparent 70%),
+      radial-gradient(120% 70% at 50% 110%, rgba(196,135,74,.05), transparent 60%),
+      var(--soil);
+  }
+  .atlas-card {
+    position: absolute; left: 16px; right: 16px; bottom: 28px;
+    background: rgba(30,27,24,.85);
+    border: 1px solid rgba(232,228,220,.07);
+    backdrop-filter: blur(20px);
+    border-radius: 22px; padding: 18px 18px 16px;
+  }
+  .atlas-card .lbl { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--mid); margin-bottom: 6px; }
+  .atlas-card .body {
+    font-family: 'Lora', serif; font-style: italic; font-weight: 400;
+    font-size: 16px; line-height: 1.36; color: var(--hi);
+  }
+  .atlas-card .stats {
+    display: flex; gap: 18px; margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid rgba(232,228,220,.05);
+    font-size: 11px; color: var(--mid);
+  }
+  .atlas-card .stats b { color: var(--hi); font-weight: 500; }
+  .atlas-card .return {
+    position: absolute; right: 16px; top: 16px;
+    width: 30px; height: 30px; border-radius: 15px;
+    background: rgba(15,15,13,.7); border: 1px solid rgba(232,228,220,.08);
+    display: grid; place-items: center;
+  }
+  .atlas-card .return svg { width: 13px; height: 13px; opacity: .8; }
+  .atlas-card .return svg path, .atlas-card .return svg circle { stroke: var(--hi); fill: none; stroke-width: 1.2; }
+
+  /* RETURN — restoring overlay */
+  .return-banner {
+    position: absolute; left: 16px; right: 16px; top: 100px; z-index: 20;
+    background: rgba(30,27,24,.86);
+    border: 1px solid rgba(124,107,206,.22);
+    backdrop-filter: blur(20px);
+    border-radius: 18px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 0 30px rgba(124,107,206,.12), 0 14px 40px rgba(0,0,0,.4);
+  }
+  .return-banner .pulse {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--tone);
+    box-shadow: 0 0 12px var(--tone); flex-shrink: 0;
+  }
+  .return-banner .txt { flex: 1; }
+  .return-banner .lbl { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--mid); }
+  .return-banner .ttl { font-family: 'Lora', serif; font-style: italic; font-size: 16px; color: var(--hi); margin-top: 2px; letter-spacing: -.005em; }
+
+  /* annotation gutters (kept off-frame, in description column) */
+  .ann-tag {
+    display: inline-block; font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--mid); padding: 3px 8px; border: 1px solid var(--page-edge);
+    border-radius: 999px; margin-right: 6px; margin-bottom: 6px;
+  }
+  .ann-tag.tone { color: var(--violet); border-color: rgba(124,107,206,.3); }
+  .ann-tag.tone-amber { color: var(--amber); border-color: rgba(196,135,74,.3); }
+
+  /* footer */
+  .footer {
+    max-width: 1280px; margin: 0 auto;
+    padding: 64px 64px 80px;
+    border-top: 1px solid var(--page-edge);
+    color: var(--lo); font-size: 12px; letter-spacing: .04em;
+  }
+
+  /* Tweaks panel */
+  .tweaks {
+    position: fixed; right: 18px; bottom: 18px; z-index: 80;
+    width: 260px; padding: 16px;
+    background: rgba(15,15,13,.92);
+    border: 1px solid rgba(232,228,220,.08);
+    border-radius: 18px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    font-size: 13px; color: var(--mid);
+  }
+  .tweaks h3 {
+    font-family: 'Lora', serif; font-style: italic; font-weight: 400;
+    font-size: 18px; color: var(--hi); margin: 0 0 4px;
+  }
+  .tweaks .blurb { font-size: 11.5px; color: var(--lo); margin-bottom: 12px; }
+  .tweaks .grp { margin-top: 10px; }
+  .tweaks .grp .lab { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--lo); margin-bottom: 6px; }
+  .tweaks .opts { display: flex; gap: 5px; flex-wrap: wrap; }
+  .tw-btn {
+    border: 1px solid rgba(232,228,220,.1); background: transparent;
+    color: var(--mid); font: inherit; font-size: 11.5px;
+    padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  }
+  .tw-btn.active { background: rgba(232,228,220,.92); color: var(--soil); border-color: transparent; }
+
+  /* breathing motion (subtle) */
+  @keyframes breathe { 0%,100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.04); opacity: 1; } }
+  .breathe { animation: breathe 4.2s cubic-bezier(.4,0,.6,1) infinite; transform-origin: center; }
+  @keyframes breatheSlow { 0%,100% { transform: scale(1); opacity: .55; } 50% { transform: scale(1.06); opacity: .8; } }
+  .breathe-slow { animation: breatheSlow 5.8s cubic-bezier(.4,0,.6,1) infinite; transform-origin: center; }
+  @keyframes orbit { from { transform: rotate(0deg);} to { transform: rotate(360deg);} }
+  .orbit { animation: orbit 12s linear infinite; transform-origin: center; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="application/json" id="tweak-defaults">/*EDITMODE-BEGIN*/{
+  "palette": "emotional",
+  "density": true,
+  "motion": true
+}/*EDITMODE-END*/</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+
+const TWEAK_DEFAULTS = JSON.parse(
+  document.getElementById('tweak-defaults').textContent
+    .replace('/*EDITMODE-BEGIN*/','').replace('/*EDITMODE-END*/','')
+);
+
+/* ===== SHARED ICONS / CHROME ===== */
+function StatusBar() {
+  return (
+    <div className="statusbar">
+      <span className="left">9:41</span>
+      <span className="right">
+        <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><path d="M1 8h2v2H1zM5 5h2v5H5zM9 2h2v8H9zM13 0h2v10h-2z" fill="currentColor"/></svg>
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none"><path d="M7 9.5C7 9.5 0 5 7 .5C14 5 7 9.5 7 9.5z" stroke="currentColor" strokeWidth="1" fill="none" opacity=".85"/></svg>
+        <svg width="22" height="10" viewBox="0 0 22 10" fill="none"><rect x=".5" y=".5" width="18" height="9" rx="2" stroke="currentColor" opacity=".5"/><rect x="2" y="2" width="13" height="6" rx="1" fill="currentColor"/><rect x="20" y="3" width="1.5" height="4" rx=".5" fill="currentColor" opacity=".5"/></svg>
+      </span>
+    </div>
+  );
+}
+
+function HaloGlyph() {
+  return (
+    <div className="halo" aria-label="Open portal">
+      <svg viewBox="0 0 18 18">
+        <circle cx="9" cy="9" r="7"/>
+        <path d="M3 9 q 6 -8 12 0"/>
+      </svg>
+    </div>
+  );
+}
+
+/* ===== THE DIAL ===== */
+/*
+  variant: 'idle' | 'tuning' | 'return'
+  density: bool
+*/
+function DialFigure({ variant, density, palette }) {
+  // dial geometry
+  const cx = 0, cy = 0;
+  const r = 130;
+
+  // bead position depends on variant
+  const beadAngle = variant === 'tuning' ? -1.05 : -2.1;
+  const beadR = r * 0.78;
+  const bx = Math.cos(beadAngle) * beadR;
+  const by = Math.sin(beadAngle) * beadR;
+
+  // facets
+  const facets = [
+    { angle: -Math.PI/2, label: 'energy' },
+    { angle: 0, label: 'texture' },
+    { angle: Math.PI/2, label: 'mood' },
+    { angle: Math.PI, label: 'tempo' },
+  ];
+
+  // density arcs (visible learned regions)
+  // angles in radians; describes arcs around the perimeter
+  const densityArcs = [
+    { from: -Math.PI*0.85, to: -Math.PI*0.25, w: 5,  o: .26 },
+    { from:  Math.PI*0.10, to:  Math.PI*0.55, w: 3.5,o: .18 },
+    { from:  Math.PI*0.65, to:  Math.PI*0.95, w: 2.5,o: .12 },
+  ];
+  const arcPath = (from, to, rad) => {
+    const x1 = Math.cos(from)*rad, y1 = Math.sin(from)*rad;
+    const x2 = Math.cos(to)*rad,   y2 = Math.sin(to)*rad;
+    const large = Math.abs(to - from) > Math.PI ? 1 : 0;
+    return `M ${x1} ${y1} A ${rad} ${rad} 0 ${large} 1 ${x2} ${y2}`;
+  };
+
+  return (
+    <svg className="dial-svg" width="320" height="320" viewBox="-160 -160 320 320">
+      {/* ambient atmosphere — soft tone wash beyond the dial */}
+      <defs>
+        <radialGradient id="atm" cx="0" cy="0" r="1">
+          <stop offset="0%" stopColor="var(--tone)" stopOpacity=".18"/>
+          <stop offset="55%" stopColor="var(--tone)" stopOpacity=".05"/>
+          <stop offset="100%" stopColor="var(--tone)" stopOpacity="0"/>
+        </radialGradient>
+        <radialGradient id="bead-grad" cx=".3" cy=".3" r=".8">
+          <stop offset="0%" stopColor="white" stopOpacity=".75"/>
+          <stop offset="35%" stopColor="var(--tone)" stopOpacity="1"/>
+          <stop offset="100%" stopColor="var(--tone)" stopOpacity=".7"/>
+        </radialGradient>
+      </defs>
+      <circle cx="0" cy="0" r="155" fill="url(#atm)"/>
+
+      {/* outer rings */}
+      <circle className="ring" r={r}/>
+      <circle className="ring ring-2" r={r * 0.78}/>
+      <circle className="ring ring-3" r={r * 0.5}/>
+      <circle className="ring ring-3" r={r * 0.24}/>
+
+      {/* density arcs — shaded learned regions */}
+      {density && densityArcs.map((a, i) => (
+        <path key={i}
+          className="density"
+          style={{ strokeWidth: a.w, opacity: a.o }}
+          d={arcPath(a.from, a.to, r * 0.93)}
+        />
+      ))}
+      {density && (
+        <path className="density faint"
+          style={{ strokeWidth: 2 }}
+          d={arcPath(-Math.PI*0.05, Math.PI*0.05, r * 0.66)}
+        />
+      )}
+
+      {/* facet ticks */}
+      {facets.map((f, i) => {
+        const a = f.angle;
+        const x1 = Math.cos(a) * (r - 8), y1 = Math.sin(a) * (r - 8);
+        const x2 = Math.cos(a) * r,       y2 = Math.sin(a) * r;
+        return <line key={i} className="tick tick-major" x1={x1} y1={y1} x2={x2} y2={y2}/>;
+      })}
+      {Array.from({ length: 48 }).map((_, i) => {
+        if (i % 12 === 0) return null;
+        const a = (i / 48) * Math.PI * 2;
+        const x1 = Math.cos(a) * (r - 4), y1 = Math.sin(a) * (r - 4);
+        const x2 = Math.cos(a) * r,       y2 = Math.sin(a) * r;
+        return <line key={'m'+i} className="tick" x1={x1} y1={y1} x2={x2} y2={y2} opacity={i%6===0?.5:.22}/>;
+      })}
+
+      {/* facet labels */}
+      <text className="facet" x={0} y={-r - 14} textAnchor="middle">energy</text>
+      <text className="facet" x={r + 10} y={4}>texture</text>
+      <text className="facet" x={0} y={r + 22} textAnchor="middle">mood</text>
+      <text className="facet" x={-r - 10} y={4} textAnchor="end">tempo</text>
+
+      {/* tuning state — drag trail + floating words */}
+      {variant === 'tuning' && (
+        <g>
+          <path d="M -76 -90 Q -10 -130 60 -90"
+                stroke="var(--tone)" strokeWidth="1.2" fill="none"
+                strokeDasharray="2 4" opacity=".55"/>
+          <text className="word word-faint" x={-110} y={-110}>slower</text>
+          <text className="word" x={70} y={-115}>dirtier</text>
+          <text className="word word-faint" x={-110} y={120}>warmer</text>
+          <text className="word word-faint" x={70} y={130}>more room</text>
+        </g>
+      )}
+
+      {/* stem from center to bead */}
+      <line className="stem" x1="0" y1="0" x2={bx} y2={by}/>
+
+      {/* the bead */}
+      <g className={variant === 'return' ? 'breathe' : ''}>
+        <circle className="bead-glow" cx={bx} cy={by} r="22"/>
+        <circle className="bead-ring" cx={bx} cy={by} r="20"/>
+        {variant === 'return' && (
+          <circle className="bead-ring" cx={bx} cy={by} r="32" opacity=".22"/>
+        )}
+        <circle cx={bx} cy={by} r="9" fill="url(#bead-grad)" stroke="rgba(232,228,220,.25)" strokeWidth=".8"/>
+      </g>
+
+      {/* center hub */}
+      <circle cx="0" cy="0" r="2.5" fill="rgba(232,228,220,.45)"/>
+    </svg>
+  );
+}
+
+/* ===== ATLAS (weekly) ===== */
+function AtlasFigure({ density, palette }) {
+  // Globe-as-atlas: 3D sphere feel via concentric ellipses + nodes
+  const r = 110;
+  return (
+    <svg width="320" height="320" viewBox="-160 -160 320 320" style={{position:'absolute', left:'50%', top:'42%', transform:'translate(-50%, -50%)'}}>
+      <defs>
+        <radialGradient id="globe-g" cx=".42" cy=".38" r=".7">
+          <stop offset="0%" stopColor="rgba(124,107,206,.16)"/>
+          <stop offset="60%" stopColor="rgba(30,27,24,.7)"/>
+          <stop offset="100%" stopColor="rgba(15,15,13,.95)"/>
+        </radialGradient>
+        <radialGradient id="globe-glow" cx=".5" cy=".5" r=".8">
+          <stop offset="0%" stopColor="var(--tone)" stopOpacity=".22"/>
+          <stop offset="60%" stopColor="var(--tone)" stopOpacity=".05"/>
+          <stop offset="100%" stopColor="var(--tone)" stopOpacity="0"/>
+        </radialGradient>
+      </defs>
+      {/* atmospheric glow behind */}
+      <circle cx="0" cy="0" r="155" fill="url(#globe-glow)"/>
+      {/* the sphere */}
+      <circle cx="0" cy="0" r={r} fill="url(#globe-g)" stroke="rgba(232,228,220,.10)" strokeWidth="1"/>
+      {/* longitude / latitude lines */}
+      {[-.6,-.3,0,.3,.6].map((t,i)=>(
+        <ellipse key={'lat'+i} cx="0" cy={t*r*0.32}
+          rx={r * Math.sqrt(1 - t*t*0.55)} ry={r*0.18}
+          fill="none" stroke="rgba(232,228,220,.07)" strokeWidth=".6" strokeDasharray="1 4"/>
+      ))}
+      {[0,.4,-.4].map((t,i)=>(
+        <ellipse key={'lon'+i} cx="0" cy="0"
+          rx={r * 0.18 + Math.abs(t) * r * 0.78} ry={r}
+          fill="none" stroke="rgba(232,228,220,.06)" strokeWidth=".5" strokeDasharray="1 5"/>
+      ))}
+      {/* density washes (continents of taught taste) */}
+      {density && (
+        <g opacity=".4">
+          <ellipse cx={-r*0.32} cy={-r*0.28} rx={r*0.42} ry={r*0.26} fill="var(--tone)" opacity=".18" filter="blur(2px)"/>
+          <ellipse cx={r*0.28} cy={r*0.18} rx={r*0.32} ry={r*0.2} fill="var(--amber)" opacity=".10"/>
+        </g>
+      )}
+      {/* named pins */}
+      {[
+        { x:-r*0.34, y:-r*0.32, n:"fog drive", r:5, tone:"var(--violet)" },
+        { x: r*0.22, y:-r*0.06, n:"sunday",    r:4, tone:"var(--amber)"  },
+        { x: r*0.40, y: r*0.30, n:"folding",   r:4.5, tone:"var(--green)" },
+        { x:-r*0.18, y: r*0.42, n:"atrium",    r:3.5, tone:"var(--rose)"  },
+      ].map((p,i)=>(
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r={p.r+8} fill={p.tone} opacity=".15" filter="blur(2px)"/>
+          <circle cx={p.x} cy={p.y} r={p.r} fill={p.tone} stroke="rgba(232,228,220,.4)" strokeWidth=".6"/>
+          <text x={p.x + p.r + 6} y={p.y + 3.5}
+                style={{ font: 'italic 400 11px Lora, serif', fill: 'var(--hi)' }}>
+            {p.n}
+          </text>
+        </g>
+      ))}
+      {/* a faint orbit ring for the active one */}
+      <circle cx={-r*0.34} cy={-r*0.32} r="14" fill="none"
+              stroke="rgba(124,107,206,.35)" strokeWidth=".7"
+              strokeDasharray="1 3" className="orbit"/>
+    </svg>
+  );
+}
+
+/* ===== SCENES ===== */
+
+function SceneBase({ children }) {
+  return (
+    <div className="scene">
+      <div className="scene-bg"/>
+      <div className="scene-noise"/>
+      {children}
+    </div>
+  );
+}
+
+/* 1 — IDLE: opening Woody at the daily surface */
+function Scene_Open({ density }) {
+  return (
+    <SceneBase>
+      <HaloGlyph/>
+      <div className="dial-wrap">
+        <DialFigure variant="idle" density={density}/>
+      </div>
+      <div className="caption">
+        <div className="word">quiet, moving inward.</div>
+        <div className="sub">the shape of your last month</div>
+      </div>
+      <div className="bottom">
+        <div className="input right-affordance">
+          <svg className="icon" viewBox="0 0 18 18" fill="none">
+            <circle cx="8" cy="8" r="5" stroke="currentColor" strokeWidth="1.2"/>
+            <path d="M12 12l4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+          <span className="ph"><i>describe a vibe…</i></span>
+          <span className="atlas-pill">
+            <svg className="glyph" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1"/>
+              <ellipse cx="7" cy="7" rx="2.5" ry="5.5" stroke="currentColor" strokeWidth=".8" opacity=".7"/>
+              <ellipse cx="7" cy="7" rx="5.5" ry="2" stroke="currentColor" strokeWidth=".8" opacity=".7"/>
+            </svg>
+            atlas
+          </span>
+        </div>
+      </div>
+    </SceneBase>
+  );
+}
+
+/* 2 — TUNING: dragging the bead, floating words, drag trail */
+function Scene_Tune({ density }) {
+  return (
+    <SceneBase>
+      <HaloGlyph/>
+      <div className="dial-wrap">
+        <DialFigure variant="tuning" density={density}/>
+      </div>
+      <div className="caption">
+        <div className="word">"dirtier"</div>
+        <div className="sub">drifting 6% toward texture · catching up in 2–4s</div>
+      </div>
+      <div className="bottom">
+        <div className="miniplayer">
+          <div className="art"/>
+          <div className="meta">
+            <div className="t">calamus</div>
+            <div className="a">harold budd · the pearl</div>
+          </div>
+          <div className="shift">
+            <span className="dot"/>
+            shift vibe
+          </div>
+        </div>
+      </div>
+    </SceneBase>
+  );
+}
+
+/* 3 — SAVE: naming a moment */
+function Scene_Save({ density }) {
+  return (
+    <SceneBase>
+      <HaloGlyph/>
+      <div className="save-overlay">
+        <div className="top">pinning at this coordinate</div>
+        <div className="pinmark breathe-slow"/>
+        <div className="prompt">name this moment</div>
+        <div className="name">fog drive<span className="caret"/></div>
+        <div className="help">a place you can return to · forever</div>
+        <div className="actions">
+          <button className="btn">cancel</button>
+          <button className="btn primary">pin it</button>
+        </div>
+      </div>
+    </SceneBase>
+  );
+}
+
+/* 4 — ATLAS: weekly ritual, named pins, what woody learned */
+function Scene_Atlas({ density }) {
+  return (
+    <SceneBase>
+      <HaloGlyph/>
+      <div className="atlas-scene">
+        <div className="atlas-bg"/>
+        <AtlasFigure density={density}/>
+        <div className="atlas-card">
+          <div className="lbl">this week · what woody learned</div>
+          <div className="body">"dirtier" now leans toward texture, less distortion. two new pins. one region expanded.</div>
+          <div className="stats">
+            <span><b>4</b> moments</span>
+            <span><b>+1</b> region</span>
+            <span><b>2</b> words refined</span>
+          </div>
+          <div className="return" aria-label="back to daily">
+            <svg viewBox="0 0 13 13"><circle cx="6.5" cy="6.5" r="5"/></svg>
+          </div>
+        </div>
+      </div>
+    </SceneBase>
+  );
+}
+
+/* 5 — RETURN: tapping a pin, dial slides to that coordinate */
+function Scene_Return({ density }) {
+  return (
+    <SceneBase>
+      <HaloGlyph/>
+      <div className="dial-wrap">
+        <DialFigure variant="return" density={density}/>
+      </div>
+      <div className="return-banner">
+        <span className="pulse breathe"/>
+        <div className="txt">
+          <div className="lbl">returning to</div>
+          <div className="ttl">fog drive</div>
+        </div>
+      </div>
+      <div className="caption">
+        <div className="word">setting the dial.</div>
+        <div className="sub">first track starting in a moment</div>
+      </div>
+      <div className="bottom">
+        <div className="miniplayer">
+          <div className="art"/>
+          <div className="meta">
+            <div className="t">avalon</div>
+            <div className="a">roxy music · avalon</div>
+          </div>
+          <div className="shift">
+            <span className="dot"/>
+            shift vibe
+          </div>
+        </div>
+      </div>
+    </SceneBase>
+  );
+}
+
+/* ===== ROW BUILDER ===== */
+function FlowRow({ num, label, title, blurb, annot, tags, Scene, density }) {
+  return (
+    <div className="row">
+      <div className="stage">
+        <div className="phone" data-screen-label={label}>
+          <div className="notch"/>
+          <StatusBar/>
+          <Scene density={density}/>
+        </div>
+      </div>
+      <div className="desc">
+        <div className="small">{num}  ·  {label}</div>
+        <h3>{title}</h3>
+        <p>{blurb}</p>
+        {tags && (<div style={{margin:'4px 0 12px'}}>{tags.map((t,i)=>(
+          <span key={i} className={"ann-tag " + (t.k||"")}>{t.t}</span>
+        ))}</div>)}
+        {annot && (<div className="annot"><b>motion · </b>{annot}</div>)}
+      </div>
+    </div>
+  );
+}
+
+/* ===== APP ===== */
+function App() {
+  const [t, setT] = useState(TWEAK_DEFAULTS);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (!e.data) return;
+      if (e.data.type === '__activate_edit_mode') setOpen(true);
+      if (e.data.type === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({type:'__edit_mode_available'}, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-palette', t.palette);
+    document.body.style.animationPlayState = t.motion ? 'running' : 'paused';
+  }, [t]);
+
+  const set = (k, v) => {
+    const n = { ...t, [k]: v };
+    setT(n);
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits:{[k]:v}}, '*');
+  };
+
+  return (
+    <>
+      <header className="pagehead">
+        <div className="eyebrow">woody · variant c · hi-fi flow</div>
+        <h1>open, tune, save, return — and once a week, look at the atlas.</h1>
+        <p className="lede">
+          The daily surface is the dial: a quiet acoustic instrument with your taught territory rendered as ambient density on its perimeter.
+          Saving names a coordinate. Returning slides the dial there. Once a week, the atlas opens — not as another navigation surface,
+          but as a small ritual where Woody shows you what it learned about your lexicon.
+        </p>
+        <div className="meta">
+          <span><b>palette</b> · nocturnal (violet) — switchable in tweaks</span>
+          <span><b>type</b> · Inter for UI, Lora italic for moments</span>
+          <span><b>surface</b> · soil black, bark capsules, glass overlays</span>
+        </div>
+      </header>
+
+      <main className="section">
+        <div className="section-head">
+          <span className="num">flow · 5 moments</span>
+          <h2>open → tune → save → atlas → return</h2>
+          <span className="kicker">scroll down · each phone is the same coordinate system at a different beat in the user's day</span>
+        </div>
+
+        <FlowRow
+          num="01"
+          label="01 Open"
+          title="Open. The dial is what you find."
+          blurb="No splash, no welcome. Woody's daily surface is the dial — your acoustic position, with your last month rendered around it as a quiet density. The atlas pill in the input is the door to the weekly ritual; everything else recedes."
+          tags={[
+            { t:"density · ambient", k:"tone" },
+            { t:"intent input still primary" },
+            { t:"halo top right" },
+          ]}
+          annot="bead breathes 0.98 → 1.04 over 4.2s. atmospheric glow drifts 8s. atlas pill stays static — it's a destination, not a feature."
+          Scene={Scene_Open}
+          density={t.density}
+        />
+
+        <FlowRow
+          num="02"
+          label="02 Tune"
+          title="Tune. The dial bends; the music catches up."
+          blurb="Drag the bead or whisper a word. The drag trail makes Woody's reinterpretation visible — you can see what it heard. Words float as soft handles, never modal. Music settles to the new coordinate over 2–4 seconds, deliberately not instant."
+          tags={[
+            { t:"language is a handle, not the input" },
+            { t:"trail makes interpretation visible" },
+            { t:"music lags by design" },
+          ]}
+          annot="drag trail draws ~600ms behind the finger. words ease in (300ms, 0.4 0 0.2 1) when they're plausible nudges. mini-player is now primary; intent input has contracted to the shift-vibe pill."
+          Scene={Scene_Tune}
+          density={t.density}
+        />
+
+        <FlowRow
+          num="03"
+          label="03 Save"
+          title="Save. A coordinate gets a name."
+          blurb="No modal chrome, no toast. The whole surface hushes — soil at 92% over the dial — and a serif prompt asks for a name. The pin pulses at the coordinate behind. Saving doesn't make a card or a row; it leaves a mark on the territory."
+          tags={[
+            { t:"Lora is the star here" },
+            { t:"no list metaphor" },
+            { t:"breathing, not jittering" },
+          ]}
+          annot="overlay fades over 480ms (settle ease). pin breathes 5.8s. caret blinks at 1.1s. on confirm, the overlay fades back to the dial; the pin remains visible on the dial perimeter as a small node."
+          Scene={Scene_Save}
+          density={t.density}
+        />
+
+        <FlowRow
+          num="04"
+          label="04 Atlas"
+          title="Atlas. Once a week, Woody shows its work."
+          blurb="The atlas isn't another way to navigate — it's a ritual surface. The globe shows your taught regions as continents; pins are named places; a single quiet card tells you what Woody learned about your language this week. You don't browse here. You read."
+          tags={[
+            { t:"weekly, not daily", k:"tone-amber" },
+            { t:"learning visible as language" },
+            { t:"reward, not demand" },
+          ]}
+          annot="globe rotates ~24s per turn. active pin's orbit ring rotates 12s. card slides up 600ms (emerge) on entry, with a 200ms stagger after the globe settles."
+          Scene={Scene_Atlas}
+          density={t.density}
+        />
+
+        <FlowRow
+          num="05"
+          label="05 Return"
+          title="Return. The dial slides to a place you've been."
+          blurb="From the atlas, tapping a pin doesn't open a player — it sets the dial. The bead slides visibly along the perimeter to that saved coordinate; the first track starts when the bead arrives. Memory is motion, not menu."
+          tags={[
+            { t:"memory = coordinate" },
+            { t:"motion is the transition" },
+            { t:"no playlist screen" },
+          ]}
+          annot="bead translates along the dial perimeter over 1.6s (cubic-bezier 0.4, 0, 0.2, 1). banner emerges at 200ms; mini-player crossfades in at 1.4s as the bead settles. session palette begins shifting at 1.8s — temperature change, never abrupt."
+          Scene={Scene_Return}
+          density={t.density}
+        />
+      </main>
+
+      <section className="section">
+        <div className="section-head">
+          <span className="num">notes</span>
+          <h2>what's deliberate, what's still open</h2>
+        </div>
+        <div className="row">
+          <div className="stage" style={{display:'grid', gap:18}}>
+            <div style={{padding:'18px 20px', border:'1px solid var(--page-edge)', borderRadius:14, background:'rgba(30,27,24,.4)'}}>
+              <div style={{fontSize:10, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--mid)', marginBottom:8}}>deliberate</div>
+              <ul style={{margin:0, paddingLeft:18, fontSize:13.5, lineHeight:1.6, color:'var(--mid)'}}>
+                <li>density rendered as <i>atmosphere</i>, not chart — perimeter shading, not a histogram</li>
+                <li>music latency is a feature: 2–4s catch-up makes interpretation feel considered</li>
+                <li>memory has no list view anywhere — only the dial perimeter and the atlas globe</li>
+                <li>halo always present; portal sheet not shown here but lives in the same slot</li>
+                <li>session palette anchors the entire screen — switch in tweaks to see it</li>
+              </ul>
+            </div>
+            <div style={{padding:'18px 20px', border:'1px solid var(--page-edge)', borderRadius:14, background:'rgba(30,27,24,.4)'}}>
+              <div style={{fontSize:10, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--mid)', marginBottom:8}}>still open</div>
+              <ul style={{margin:0, paddingLeft:18, fontSize:13.5, lineHeight:1.6, color:'var(--mid)'}}>
+                <li>how the user is cued to open the atlas the first time (notification? halo glow? whisper?)</li>
+                <li>whether the atlas is fixed weekly or adaptive (e.g. opens after N new pins)</li>
+                <li>onboarding moment 1 (the ask) — same soil + Lora language but not in this flow</li>
+                <li>portal sheet contents at full fidelity (account, body state, status, pinned moments)</li>
+                <li>node-state matrix on the atlas globe (default / hover / playing / known / saving)</li>
+              </ul>
+            </div>
+          </div>
+          <div className="desc">
+            <div className="small">read me</div>
+            <h3>this is one path through the product, not the product</h3>
+            <p>
+              Round 1 wireframes covered seven surfaces. Round 2 picked the connection model. This file shows the daily-to-weekly
+              path at full token fidelity — soil/bark backgrounds, accent-violet at 60–80% opacity, Lora italic reserved for the
+              three moments where it matters (caption, name-this-moment, atlas card). Everything else is Inter, restrained.
+            </p>
+            <p>
+              Use the tweaks panel (bottom right when active) to flip session palette — the entire UI temperature shifts. That's the
+              session-palette pattern from the brief, wired live so you can feel it.
+            </p>
+            <div className="annot">
+              <b>next, if C lands.</b> portal sheet at full fidelity, onboarding moments 1–3, and the node-state matrix on the atlas globe.
+              Then handoff: tokens to tailwind config, motion specs to Framer Motion notes, components mapped to the existing codebase.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer className="footer">
+        woody · variant c · hi-fi flow · five moments at full token fidelity · 04.2026
+      </footer>
+
+      {open && (
+        <div className="tweaks">
+          <h3>Tweaks</h3>
+          <div className="blurb">live controls — palette is the brief's session-palette pattern</div>
+          <div className="grp">
+            <div className="lab">session palette</div>
+            <div className="opts">
+              {[
+                { k:'nocturnal', l:'nocturnal' },
+                { k:'energetic', l:'energetic' },
+                { k:'earthy',    l:'earthy'    },
+                { k:'emotional', l:'emotional' },
+              ].map(p => (
+                <button key={p.k}
+                  className={"tw-btn " + (t.palette === p.k ? 'active' : '')}
+                  onClick={() => set('palette', p.k)}>{p.l}</button>
+              ))}
+            </div>
+          </div>
+          <div className="grp">
+            <div className="lab">density (taught territory)</div>
+            <div className="opts">
+              <button className={"tw-btn " + (t.density ? 'active' : '')} onClick={() => set('density', true)}>visible</button>
+              <button className={"tw-btn " + (!t.density ? 'active' : '')} onClick={() => set('density', false)}>hidden</button>
+            </div>
+          </div>
+          <div className="grp">
+            <div className="lab">motion</div>
+            <div className="opts">
+              <button className={"tw-btn " + (t.motion ? 'active' : '')} onClick={() => set('motion', true)}>on</button>
+              <button className={"tw-btn " + (!t.motion ? 'active' : '')} onClick={() => set('motion', false)}>still</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

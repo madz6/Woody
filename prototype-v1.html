@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Woody — Prototype v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Lora:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --soil:       #0F0F0D;
+    --moss:       #171713;
+    --bark:       #1E1B18;
+    --bark-light: #2A2520;
+    --text-hi:    #E8E4DC;
+    --text-mid:   #8A8680;
+    --text-lo:    #4A4844;
+    --violet:     #7C6BCE;
+    --violet-dim: rgba(124, 107, 206, 0.12);
+    --amber:      #C4874A;
+    --amber-dim:  rgba(196, 135, 74, 0.10);
+    --moss-green: #4E6B45;
+    --moss-dim:   rgba(78, 107, 69, 0.12);
+    --rose:       #8C5C5C;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--soil);
+    color: var(--text-hi);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── SCREENS ── */
+  .screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .screen.active {
+    opacity: 1; pointer-events: all;
+  }
+
+  /* ── NAV BAR ── */
+  nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: rgba(15, 15, 13, 0.92);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255,255,255,0.04);
+    display: flex; align-items: center; justify-content: space-around;
+    z-index: 100;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .nav-btn {
+    background: none; border: none; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 8px 16px;
+    color: var(--text-lo);
+    font-family: 'Inter', sans-serif;
+    font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+    transition: color 0.3s;
+  }
+  .nav-btn.active-nav { color: var(--text-hi); }
+  .nav-btn svg { width: 18px; height: 18px; }
+
+
+  /* ════════════════════════════════
+     SCREEN 1 — HOME
+  ════════════════════════════════ */
+  #screen-home {
+    padding: 52px 24px 80px;
+    align-items: stretch;
+    justify-content: space-between;
+  }
+
+  .home-header {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .home-label {
+    font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-lo);
+  }
+  .home-title {
+    font-family: 'Lora', serif;
+    font-size: 28px; font-weight: 400; font-style: italic;
+    color: var(--text-hi); line-height: 1.2;
+  }
+  .home-sub {
+    font-size: 12px; color: var(--text-mid);
+    margin-top: 4px;
+  }
+
+  /* Nodes */
+  .nodes-area {
+    flex: 1;
+    position: relative;
+    margin: 32px 0;
+    min-height: 320px;
+  }
+
+  .node-card {
+    position: absolute;
+    background: var(--bark);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 18px;
+    padding: 16px 18px;
+    cursor: pointer;
+    transition:
+      transform 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.4s,
+      background 0.4s,
+      opacity 0.6s;
+    width: 210px;
+  }
+
+  .node-card:hover {
+    border-color: rgba(255,255,255,0.12);
+    background: var(--bark-light);
+    transform: translate(var(--tx), var(--ty)) scale(1.02) !important;
+  }
+
+  .node-card.locked {
+    z-index: 10;
+    border-color: rgba(255,255,255,0.15);
+  }
+
+  .node-card.fading { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(0.95) !important; }
+
+  .node-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    margin-bottom: 12px;
+    animation: breathe 3.5s ease-in-out infinite;
+  }
+
+  .node-track { font-size: 14px; font-weight: 500; color: var(--text-hi); line-height: 1.3; }
+  .node-artist { font-size: 11px; color: var(--text-mid); margin-top: 3px; }
+  .node-why {
+    font-size: 10px; color: var(--text-lo);
+    margin-top: 10px; line-height: 1.5;
+    font-style: italic; font-family: 'Lora', serif;
+  }
+
+  /* tone accents per node */
+  .node-card[data-tone="violet"] { --dot-c: var(--violet); }
+  .node-card[data-tone="amber"]  { --dot-c: var(--amber);  }
+  .node-card[data-tone="moss"]   { --dot-c: var(--moss-green); }
+  .node-card[data-tone="rose"]   { --dot-c: var(--rose);   }
+  .node-dot { background: var(--dot-c); box-shadow: 0 0 8px var(--dot-c); }
+
+  /* staggered drift */
+  .node-card { transform: translate(var(--tx), var(--ty)); }
+
+  @keyframes drift1 {
+    0%,100% { --ty: 0px }
+    50%      { --ty: -8px }
+  }
+  @keyframes drift2 {
+    0%,100% { --ty: 0px }
+    50%      { --ty: 6px }
+  }
+  @keyframes drift3 {
+    0%,100% { --ty: 0px }
+    50%      { --ty: -5px }
+  }
+  @keyframes drift4 {
+    0%,100% { --ty: 0px }
+    50%      { --ty: 7px }
+  }
+
+  @property --ty { syntax: '<length>'; inherits: false; initial-value: 0px; }
+  @property --tx { syntax: '<length>'; inherits: false; initial-value: 0px; }
+
+  .node-card:nth-child(1) { animation: drift1 6.0s ease-in-out infinite; }
+  .node-card:nth-child(2) { animation: drift2 7.2s ease-in-out infinite; }
+  .node-card:nth-child(3) { animation: drift3 5.8s ease-in-out infinite; }
+  .node-card:nth-child(4) { animation: drift4 8.1s ease-in-out infinite; }
+
+  @keyframes breathe {
+    0%,100% { transform: scale(1); opacity: 0.9; }
+    50%      { transform: scale(1.35); opacity: 1; }
+  }
+
+  /* intent input */
+  .intent-bar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bark);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 14px 16px;
+    cursor: text;
+    transition: border-color 0.3s;
+  }
+  .intent-bar:focus-within { border-color: rgba(255,255,255,0.14); }
+  .intent-bar svg { color: var(--text-lo); flex-shrink: 0; }
+  .intent-input {
+    flex: 1; background: none; border: none; outline: none;
+    font-family: 'Inter', sans-serif; font-size: 14px;
+    color: var(--text-hi);
+  }
+  .intent-input::placeholder { color: var(--text-lo); }
+
+
+  /* ════════════════════════════════
+     SCREEN 2 — PLAYER
+  ════════════════════════════════ */
+  #screen-player {
+    align-items: center; justify-content: flex-start;
+    padding: 0 0 80px;
+    overflow: hidden;
+  }
+
+  .player-bg {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 80% 60% at 50% 35%,
+      rgba(124, 107, 206, 0.07) 0%,
+      transparent 70%),
+      var(--soil);
+    transition: background 2s ease;
+  }
+
+  .player-top {
+    width: 100%; display: flex; align-items: center;
+    justify-content: space-between;
+    padding: 52px 24px 0;
+    position: relative; z-index: 2;
+  }
+  .back-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-mid); font-size: 12px;
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'Inter', sans-serif;
+    padding: 8px 0;
+  }
+  .mode-toggle {
+    background: var(--bark);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px; padding: 6px 14px;
+    font-size: 11px; color: var(--text-mid); letter-spacing: 0.06em;
+    cursor: pointer; font-family: 'Inter', sans-serif;
+    transition: all 0.3s;
+  }
+  .mode-toggle.ambient { color: var(--violet); border-color: rgba(124,107,206,0.25); }
+
+  /* Central living node */
+  .node-center-wrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    position: relative; z-index: 2; width: 100%;
+    margin-top: -20px;
+  }
+
+  .node-center {
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 38%,
+      #2A2520 0%, #1A1713 60%, #0F0F0D 100%);
+    border: 1px solid rgba(255,255,255,0.07);
+    display: flex; align-items: center; justify-content: center;
+    animation: node-breathe 4s cubic-bezier(0.4,0,0.6,1) infinite;
+    position: relative;
+    box-shadow:
+      0 0 40px rgba(124,107,206,0.08),
+      0 0 80px rgba(124,107,206,0.04),
+      inset 0 1px 0 rgba(255,255,255,0.05);
+    cursor: pointer;
+    transition: all 0.8s;
+  }
+
+  .node-center::before {
+    content: '';
+    position: absolute; inset: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.04);
+    animation: node-breathe 4s cubic-bezier(0.4,0,0.6,1) infinite reverse;
+  }
+
+  .node-center::after {
+    content: '';
+    position: absolute; inset: -1px;
+    border-radius: 50%;
+    background: conic-gradient(
+      from 180deg,
+      transparent 0deg,
+      rgba(124,107,206,0.15) 60deg,
+      transparent 120deg,
+      transparent 360deg
+    );
+    animation: orbit 12s linear infinite;
+  }
+
+  @keyframes node-breathe {
+    0%,100% { transform: scale(1); }
+    50%      { transform: scale(1.045); }
+  }
+
+  @keyframes orbit {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  .node-inner-text {
+    position: relative; z-index: 1; text-align: center;
+    padding: 16px;
+  }
+  .now-track { font-size: 15px; font-weight: 500; color: var(--text-hi); line-height: 1.3; }
+  .now-artist { font-size: 11px; color: var(--text-mid); margin-top: 4px; }
+
+  /* Territory background shapes */
+  .territory {
+    position: absolute; z-index: 1; pointer-events: none;
+    border-radius: 50%; filter: blur(60px); opacity: 0.05;
+    animation: territory-drift 18s ease-in-out infinite;
+  }
+  .t1 { width: 300px; height: 200px; background: var(--violet); top: 5%; left: -10%; }
+  .t2 { width: 250px; height: 180px; background: var(--amber);  bottom: 25%; right: -8%;
+        animation-duration: 22s; animation-delay: -5s; }
+  .t3 { width: 200px; height: 200px; background: var(--moss-green); bottom: 15%; left: 20%;
+        animation-duration: 15s; animation-delay: -10s; }
+
+  @keyframes territory-drift {
+    0%,100% { transform: translate(0,0) scale(1); }
+    33%      { transform: translate(20px,-15px) scale(1.05); }
+    66%      { transform: translate(-15px,20px) scale(0.95); }
+  }
+
+  /* player controls */
+  .player-controls {
+    width: 100%; padding: 0 24px;
+    position: relative; z-index: 2;
+  }
+
+  .track-meta {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-bottom: 20px;
+  }
+  .track-info { flex: 1; }
+  .track-name-big { font-size: 18px; font-weight: 500; }
+  .track-artist-big { font-size: 13px; color: var(--text-mid); margin-top: 3px; }
+  .save-btn {
+    background: none; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
+    padding: 7px 14px; color: var(--text-mid); font-size: 11px;
+    cursor: pointer; font-family: 'Inter', sans-serif; letter-spacing: 0.06em;
+    transition: all 0.3s;
+  }
+  .save-btn:hover { border-color: rgba(255,255,255,0.2); color: var(--text-hi); }
+
+  /* timeline */
+  .timeline-wrap { margin-bottom: 24px; }
+  .timeline-bar {
+    width: 100%; height: 2px; background: rgba(255,255,255,0.06);
+    border-radius: 2px; position: relative; cursor: pointer;
+  }
+  .timeline-fill {
+    height: 100%; background: rgba(255,255,255,0.3); border-radius: 2px;
+    width: 38%; transition: width 0.5s;
+  }
+  .timeline-handle {
+    width: 10px; height: 10px; background: var(--text-hi);
+    border-radius: 50%; position: absolute; top: -4px; left: 38%;
+    transform: translateX(-50%);
+    box-shadow: 0 0 8px rgba(255,255,255,0.3);
+  }
+  .timeline-times { display: flex; justify-content: space-between; margin-top: 8px; }
+  .time { font-size: 10px; color: var(--text-lo); }
+
+  /* play row */
+  .play-row {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .ctrl-btn {
+    background: none; border: none; cursor: pointer; color: var(--text-mid);
+    padding: 8px; transition: color 0.25s, transform 0.2s;
+  }
+  .ctrl-btn:hover { color: var(--text-hi); transform: scale(1.08); }
+  .play-pause {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--bark-light);
+    border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: all 0.25s;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  .play-pause:hover { background: rgba(124,107,206,0.2); border-color: rgba(124,107,206,0.3); }
+  .play-pause svg { color: var(--text-hi); }
+
+
+  /* ════════════════════════════════
+     SCREEN 3 — MAP
+  ════════════════════════════════ */
+  #screen-map {
+    overflow: hidden;
+  }
+
+  canvas#map-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+  }
+
+  .map-header {
+    position: relative; z-index: 2;
+    padding: 52px 24px 0;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .map-label { font-size: 10px; color: var(--text-lo); letter-spacing: 0.1em; text-transform: uppercase; }
+
+  .map-zoom {
+    display: flex; gap: 8px;
+  }
+  .zoom-btn {
+    background: var(--bark); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; padding: 6px 10px;
+    color: var(--text-mid); font-size: 14px; cursor: pointer;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .map-hint {
+    position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%);
+    background: rgba(15,15,13,0.8); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px; padding: 8px 16px;
+    font-size: 11px; color: var(--text-mid); white-space: nowrap;
+    backdrop-filter: blur(10px);
+    z-index: 2;
+  }
+
+
+  /* ════════════════════════════════
+     SCREEN 4 — SAVE POINT
+  ════════════════════════════════ */
+  #screen-save {
+    align-items: center; justify-content: center;
+    padding: 0 32px 80px;
+    gap: 0;
+  }
+
+  .save-node {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: var(--bark);
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 40px;
+    position: relative;
+    box-shadow: 0 0 40px rgba(196,135,74,0.1);
+    animation: save-pulse 5s ease-in-out infinite;
+  }
+  .save-node::after {
+    content: '';
+    position: absolute; inset: -8px; border-radius: 50%;
+    border: 1px solid rgba(196,135,74,0.12);
+    animation: save-ring 5s ease-in-out infinite;
+  }
+
+  @keyframes save-pulse {
+    0%,100% { transform: scale(1); box-shadow: 0 0 40px rgba(196,135,74,0.1); }
+    50%      { transform: scale(1.04); box-shadow: 0 0 60px rgba(196,135,74,0.18); }
+  }
+  @keyframes save-ring {
+    0%,100% { transform: scale(1); opacity: 0.5; }
+    50%      { transform: scale(1.12); opacity: 0.2; }
+  }
+
+  .save-prompt {
+    font-family: 'Lora', serif; font-style: italic;
+    font-size: 15px; color: var(--text-mid);
+    margin-bottom: 20px; text-align: center; line-height: 1.5;
+  }
+  .save-name-input {
+    width: 100%; background: var(--bark);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px; padding: 16px;
+    font-family: 'Lora', serif; font-style: italic;
+    font-size: 18px; color: var(--text-hi); text-align: center;
+    outline: none;
+    transition: border-color 0.3s;
+    margin-bottom: 12px;
+  }
+  .save-name-input::placeholder { color: var(--text-lo); }
+  .save-name-input:focus { border-color: rgba(196,135,74,0.3); }
+  .save-note-input {
+    width: 100%; background: none;
+    border: none; border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding: 10px 0;
+    font-family: 'Lora', serif; font-size: 13px; font-style: italic;
+    color: var(--text-mid); text-align: center;
+    outline: none; margin-bottom: 32px;
+  }
+  .save-note-input::placeholder { color: var(--text-lo); }
+
+  .save-confirm {
+    background: var(--bark-light);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; padding: 14px 40px;
+    font-family: 'Inter', sans-serif; font-size: 13px;
+    color: var(--text-hi); letter-spacing: 0.06em;
+    cursor: pointer; transition: all 0.3s;
+  }
+  .save-confirm:hover { border-color: rgba(196,135,74,0.3); color: var(--amber); }
+
+  .save-context {
+    margin-top: 24px; font-size: 11px; color: var(--text-lo); text-align: center;
+  }
+
+</style>
+</head>
+<body>
+
+<!-- ── SCREEN 1: HOME ── -->
+<div id="screen-home" class="screen active">
+  <div class="home-header">
+    <span class="home-label">Tonight</span>
+    <h1 class="home-title">What are you in the mood for?</h1>
+    <p class="home-sub">3 tracks that belong to your territory</p>
+  </div>
+
+  <div class="nodes-area">
+
+    <!-- Node 1 -->
+    <div class="node-card" data-tone="violet"
+      style="top: 0%; left: 5%; --tx: 0px; --ty: 0px;"
+      onclick="goPlayer('Nuit Idéale', 'Polo & Pan', 'glossy, forward motion, no sadness')">
+      <div class="node-dot"></div>
+      <div class="node-track">Nuit Idéale</div>
+      <div class="node-artist">Polo & Pan</div>
+      <div class="node-why">Glossy and forward — no weight to it</div>
+    </div>
+
+    <!-- Node 2 -->
+    <div class="node-card" data-tone="amber"
+      style="top: 22%; right: 5%; left: auto; --tx: 0px; --ty: 0px;"
+      onclick="goPlayer('After Hours', 'Burial', 'late night, grainy, city pulse')">
+      <div class="node-dot"></div>
+      <div class="node-track">After Hours</div>
+      <div class="node-artist">Burial</div>
+      <div class="node-why">Late night city grain, keeps moving</div>
+    </div>
+
+    <!-- Node 3 -->
+    <div class="node-card" data-tone="moss"
+      style="top: 48%; left: 10%; --tx: 0px; --ty: 0px;"
+      onclick="goPlayer('Rosewood', 'Hiatus Kaiyote', 'warm, textured, human')">
+      <div class="node-dot"></div>
+      <div class="node-track">Rosewood</div>
+      <div class="node-artist">Hiatus Kaiyote</div>
+      <div class="node-why">Warm, textured, grounded</div>
+    </div>
+
+    <!-- Node 4 -->
+    <div class="node-card" data-tone="rose"
+      style="top: 66%; right: 5%; left: auto; --tx: 0px; --ty: 0px;"
+      onclick="goPlayer('Everything in Its Right Place', 'Radiohead', 'stretched, dissolving')">
+      <div class="node-dot"></div>
+      <div class="node-track">Everything in Its Right Place</div>
+      <div class="node-artist">Radiohead</div>
+      <div class="node-why">Stretched and dissolving — no resolution</div>
+    </div>
+
+  </div>
+
+  <div class="intent-bar">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    </svg>
+    <input class="intent-input" placeholder="late night drive, glossy, no sad piano…" />
+  </div>
+</div>
+
+
+<!-- ── SCREEN 2: PLAYER ── -->
+<div id="screen-player" class="screen">
+  <div class="player-bg" id="player-bg"></div>
+
+  <div class="territory t1"></div>
+  <div class="territory t2"></div>
+  <div class="territory t3"></div>
+
+  <div class="player-top">
+    <button class="back-btn" onclick="goHome()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="m15 18-6-6 6-6"/>
+      </svg>
+      Back
+    </button>
+    <button class="mode-toggle" id="mode-toggle" onclick="toggleMode()">Active</button>
+  </div>
+
+  <div class="node-center-wrap">
+    <div class="node-center" onclick="goSave()">
+      <div class="node-inner-text">
+        <div class="now-track" id="now-track">—</div>
+        <div class="now-artist" id="now-artist">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="player-controls">
+    <div class="track-meta">
+      <div class="track-info">
+        <div class="track-name-big" id="track-name-big">—</div>
+        <div class="track-artist-big" id="track-artist-big">—</div>
+      </div>
+      <button class="save-btn" onclick="goSave()">Save moment</button>
+    </div>
+
+    <div class="timeline-wrap">
+      <div class="timeline-bar">
+        <div class="timeline-fill" id="timeline-fill"></div>
+        <div class="timeline-handle" id="timeline-handle"></div>
+      </div>
+      <div class="timeline-times">
+        <span class="time" id="time-elapsed">1:24</span>
+        <span class="time">3:47</span>
+      </div>
+    </div>
+
+    <div class="play-row">
+      <button class="ctrl-btn" title="Shift vibe">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </button>
+
+      <button class="ctrl-btn">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>
+        </svg>
+      </button>
+
+      <div class="play-pause" id="play-pause" onclick="togglePlay()">
+        <svg id="play-icon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+      </div>
+
+      <button class="ctrl-btn">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>
+        </svg>
+      </button>
+
+      <button class="ctrl-btn" onclick="goMap()" title="Open map">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21 3 6"/>
+          <line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ── SCREEN 3: MAP ── -->
+<div id="screen-map" class="screen">
+  <div class="map-header">
+    <span class="map-label">Your Territory</span>
+    <div class="map-zoom">
+      <button class="zoom-btn" onclick="zoomMap(1.2)">+</button>
+      <button class="zoom-btn" onclick="zoomMap(0.8)">−</button>
+    </div>
+  </div>
+
+  <canvas id="map-canvas"></canvas>
+
+  <div class="map-hint">Drag to explore · Pull toward a cluster to steer</div>
+</div>
+
+
+<!-- ── SCREEN 4: SAVE ── -->
+<div id="screen-save" class="screen">
+  <div class="save-node"></div>
+  <p class="save-prompt">Name this moment</p>
+  <input class="save-name-input" placeholder="late night drive, april" />
+  <input class="save-note-input" placeholder="add a feeling, a detail…" />
+  <button class="save-confirm" onclick="goPlayer()">Anchor to map</button>
+  <p class="save-context">This becomes a permanent point in your territory</p>
+</div>
+
+
+<!-- ── BOTTOM NAV ── -->
+<nav>
+  <button class="nav-btn active-nav" id="nav-home" onclick="goHome()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      <polyline points="9 22 9 12 15 12 15 22"/>
+    </svg>
+    Home
+  </button>
+
+  <button class="nav-btn" id="nav-player" onclick="goPlayer()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="12" cy="12" r="10"/>
+      <polygon points="10 8 16 12 10 16 10 8"/>
+    </svg>
+    Now
+  </button>
+
+  <button class="nav-btn" id="nav-map" onclick="goMap()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21 3 6"/>
+      <line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+    </svg>
+    Map
+  </button>
+
+  <button class="nav-btn" id="nav-save" onclick="goSave()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <circle cx="12" cy="12" r="3"/>
+      <circle cx="12" cy="12" r="9" stroke-dasharray="2 4"/>
+    </svg>
+    Save
+  </button>
+</nav>
+
+
+<script>
+  /* ─── State ─── */
+  let currentTrack = { name: '', artist: '', why: '' };
+  let playing = false;
+  let ambientMode = false;
+  let mapScale = 1;
+  let mapOffset = { x: 0, y: 0 };
+  let isDragging = false;
+  let dragStart = { x: 0, y: 0 };
+  let timelineInterval = null;
+  let timeElapsed = 84; // seconds
+
+  /* ─── Navigation ─── */
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active-nav'));
+    document.getElementById(id).classList.add('active');
+    const navMap = {
+      'screen-home': 'nav-home',
+      'screen-player': 'nav-player',
+      'screen-map': 'nav-map',
+      'screen-save': 'nav-save'
+    };
+    if (navMap[id]) document.getElementById(navMap[id]).classList.add('active-nav');
+    if (id === 'screen-map') initMap();
+  }
+
+  function goHome() { showScreen('screen-home'); }
+
+  function goPlayer(track, artist, why) {
+    if (track) {
+      currentTrack = { name: track, artist: artist, why: why };
+      document.getElementById('now-track').textContent = track;
+      document.getElementById('now-artist').textContent = artist;
+      document.getElementById('track-name-big').textContent = track;
+      document.getElementById('track-artist-big').textContent = artist;
+
+      // Fade home nodes
+      document.querySelectorAll('.node-card').forEach(n => n.classList.add('fading'));
+      setTimeout(() => {
+        document.querySelectorAll('.node-card').forEach(n => n.classList.remove('fading'));
+      }, 800);
+
+      playing = true;
+      updatePlayState();
+      startTimeline();
+    }
+    showScreen('screen-player');
+  }
+
+  function goMap() { showScreen('screen-map'); }
+  function goSave() { showScreen('screen-save'); }
+
+  /* ─── Player controls ─── */
+  function togglePlay() {
+    playing = !playing;
+    updatePlayState();
+    if (playing) startTimeline(); else stopTimeline();
+  }
+
+  function updatePlayState() {
+    const icon = document.getElementById('play-icon');
+    if (playing) {
+      icon.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+    } else {
+      icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+    }
+  }
+
+  function toggleMode() {
+    ambientMode = !ambientMode;
+    const btn = document.getElementById('mode-toggle');
+    btn.textContent = ambientMode ? 'Ambient' : 'Active';
+    btn.classList.toggle('ambient', ambientMode);
+    const node = document.querySelector('.node-center');
+    node.style.animationDuration = ambientMode ? '8s' : '4s';
+  }
+
+  /* ─── Timeline ─── */
+  function startTimeline() {
+    stopTimeline();
+    timelineInterval = setInterval(() => {
+      timeElapsed = Math.min(timeElapsed + 1, 227);
+      updateTimeline();
+    }, 1000);
+  }
+
+  function stopTimeline() {
+    if (timelineInterval) clearInterval(timelineInterval);
+  }
+
+  function updateTimeline() {
+    const pct = (timeElapsed / 227) * 100;
+    document.getElementById('timeline-fill').style.width = pct + '%';
+    document.getElementById('timeline-handle').style.left = pct + '%';
+    const m = Math.floor(timeElapsed / 60);
+    const s = timeElapsed % 60;
+    document.getElementById('time-elapsed').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+  }
+
+
+  /* ─── MAP CANVAS ─── */
+  function initMap() {
+    const canvas = document.getElementById('map-canvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Nodes on the map
+    const nodes = [
+      { x: 0.35, y: 0.38, label: 'Nuit Idéale', sub: 'Polo & Pan', r: 28, color: '#7C6BCE', known: true },
+      { x: 0.65, y: 0.42, label: 'After Hours', sub: 'Burial', r: 22, color: '#C4874A', known: true },
+      { x: 0.45, y: 0.62, label: 'Rosewood', sub: 'Hiatus Kaiyote', r: 25, color: '#4E6B45', known: true },
+      { x: 0.22, y: 0.55, label: 'Flicker', sub: 'Mount Kimbie', r: 18, color: '#7C6BCE', known: false },
+      { x: 0.75, y: 0.60, label: 'Everything...', sub: 'Radiohead', r: 20, color: '#8C5C5C', known: true },
+      { x: 0.55, y: 0.28, label: 'Yebba\'s Heartbreak', sub: 'Yebba', r: 16, color: '#C4874A', known: false },
+      { x: 0.82, y: 0.35, label: 'Sundial', sub: 'Jon Hopkins', r: 14, color: '#7C6BCE', known: false },
+      { x: 0.18, y: 0.35, label: 'Naomi', sub: 'Neutral Milk Hotel', r: 12, color: '#4E6B45', known: false },
+      { x: 0.60, y: 0.75, label: 'Shiver', sub: 'Coldplay (early)', r: 10, color: '#8C5C5C', known: false },
+      { x: 0.30, y: 0.72, label: 'Swim', sub: 'Caribou', r: 16, color: '#7C6BCE', known: false },
+    ];
+
+    let tick = 0;
+
+    function draw() {
+      const W = canvas.width, H = canvas.height;
+      tick++;
+
+      ctx.clearRect(0, 0, W, H);
+
+      // Background
+      ctx.fillStyle = '#0F0F0D';
+      ctx.fillRect(0, 0, W, H);
+
+      // Subtle territory blobs
+      const territories = [
+        { x: 0.38, y: 0.48, rx: 200, ry: 160, color: 'rgba(124,107,206,0.04)' },
+        { x: 0.65, y: 0.55, rx: 170, ry: 130, color: 'rgba(196,135,74,0.03)' },
+        { x: 0.40, y: 0.62, rx: 140, ry: 110, color: 'rgba(78,107,69,0.04)' },
+      ];
+
+      territories.forEach(t => {
+        const gx = t.x * W + Math.sin(tick * 0.005) * 12;
+        const gy = t.y * H + Math.cos(tick * 0.004) * 8;
+        const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, t.rx);
+        grad.addColorStop(0, t.color);
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(gx, gy, t.rx, t.ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Connections (faint)
+      const connections = [[0,1],[0,2],[1,4],[2,3],[2,5],[3,9],[1,6]];
+      connections.forEach(([a,b]) => {
+        const na = nodes[a], nb = nodes[b];
+        ctx.beginPath();
+        ctx.moveTo(na.x * W, na.y * H);
+        ctx.lineTo(nb.x * W, nb.y * H);
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+
+      // Nodes
+      nodes.forEach((node, i) => {
+        const nx = node.x * W + Math.sin(tick * 0.008 + i * 1.2) * 4;
+        const ny = node.y * H + Math.cos(tick * 0.006 + i * 0.8) * 3;
+        const pulse = 1 + Math.sin(tick * 0.04 + i * 0.7) * 0.04;
+        const r = node.r * pulse;
+
+        // Outer glow for known nodes
+        if (node.known) {
+          const glow = ctx.createRadialGradient(nx, ny, r * 0.5, nx, ny, r * 2.5);
+          glow.addColorStop(0, node.color + '25');
+          glow.addColorStop(1, 'transparent');
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(nx, ny, r * 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Node body
+        ctx.beginPath();
+        ctx.arc(nx, ny, r, 0, Math.PI * 2);
+        if (node.known) {
+          const bg = ctx.createRadialGradient(nx - r*0.3, ny - r*0.3, 0, nx, ny, r);
+          bg.addColorStop(0, '#2A2520');
+          bg.addColorStop(1, '#1A1713');
+          ctx.fillStyle = bg;
+          ctx.fill();
+          ctx.strokeStyle = node.color + '50';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = 'rgba(255,255,255,0.03)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // Center dot
+        ctx.beginPath();
+        ctx.arc(nx, ny, node.known ? 3 : 2, 0, Math.PI * 2);
+        ctx.fillStyle = node.known ? node.color : 'rgba(255,255,255,0.2)';
+        ctx.fill();
+
+        // Label (only for known or larger nodes)
+        if (node.known || node.r > 14) {
+          ctx.font = `${node.known ? 500 : 400} 11px Inter, sans-serif`;
+          ctx.fillStyle = node.known ? 'rgba(232,228,220,0.85)' : 'rgba(255,255,255,0.25)';
+          ctx.textAlign = 'center';
+          ctx.fillText(node.label, nx, ny + r + 14);
+          if (node.known) {
+            ctx.font = '10px Inter, sans-serif';
+            ctx.fillStyle = 'rgba(138,134,128,0.6)';
+            ctx.fillText(node.sub, nx, ny + r + 26);
+          }
+        }
+      });
+
+      // Current position pulse
+      const cur = nodes[0];
+      const cp = 1 + Math.sin(tick * 0.06) * 0.15;
+      ctx.beginPath();
+      ctx.arc(cur.x * W, cur.y * H, cur.r * cp * 1.4, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(124,107,206,0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+
+    // Drag to pan
+    canvas.addEventListener('mousedown', e => {
+      isDragging = true;
+      dragStart = { x: e.clientX - mapOffset.x, y: e.clientY - mapOffset.y };
+    });
+    canvas.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      mapOffset.x = e.clientX - dragStart.x;
+      mapOffset.y = e.clientY - dragStart.y;
+    });
+    canvas.addEventListener('mouseup', () => { isDragging = false; });
+
+    // Touch
+    canvas.addEventListener('touchstart', e => {
+      isDragging = true;
+      dragStart = { x: e.touches[0].clientX - mapOffset.x, y: e.touches[0].clientY - mapOffset.y };
+    });
+    canvas.addEventListener('touchmove', e => {
+      if (!isDragging) return;
+      mapOffset.x = e.touches[0].clientX - dragStart.x;
+      mapOffset.y = e.touches[0].clientY - dragStart.y;
+      e.preventDefault();
+    }, { passive: false });
+    canvas.addEventListener('touchend', () => { isDragging = false; });
+  }
+
+  function zoomMap(factor) {
+    mapScale = Math.max(0.5, Math.min(3, mapScale * factor));
+  }
+
+  /* ─── Init ─── */
+  goHome();
+</script>
+</body>
+</html>
