@@ -3,11 +3,13 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
+import { SequenceProductPrototype } from './SequenceProductPrototype'
 import { WoodyObject, type WoodyMaterial, type WoodyMotionState } from './WoodyObject'
 import styles from './WoodyDesignLab.module.css'
 
 type Theme = 'dark' | 'light'
 type ArtTreatment = 'artwork' | 'fragments' | 'colour'
+type LabView = 'product' | 'objects'
 
 const MATERIALS: Array<{ id: WoodyMaterial; name: string; character: string; motion: string }> = [
   { id: 'functional', name: 'Sequence', character: 'Function first, still alive', motion: 'Assembles around the journey' },
@@ -42,6 +44,7 @@ export function WoodyDesignLab() {
   const [artTreatment, setArtTreatment] = useState<ArtTreatment>('artwork')
   const [albumIndex, setAlbumIndex] = useState(0)
   const [anchorSheetOpen, setAnchorSheetOpen] = useState(false)
+  const [labView, setLabView] = useState<LabView>('product')
 
   const activeMaterial = MATERIALS.find((candidate) => candidate.id === material) ?? MATERIALS[0]
   const activeAlbum = ALBUMS[albumIndex]
@@ -56,13 +59,20 @@ export function WoodyDesignLab() {
     <main className={`${styles.lab} ${styles[theme]}`}>
       <header className={styles.header}>
         <Link href="/" className={styles.wordmark}><span>W</span><strong>WOODY</strong><small>DESIGN LAB / 01</small></Link>
-        <div className={styles.themeSwitch} aria-label="Canvas theme">
-          <button className={theme === 'dark' ? styles.active : ''} onClick={() => setTheme('dark')}>Night</button>
-          <button className={theme === 'light' ? styles.active : ''} onClick={() => setTheme('light')}>Day</button>
+        <div className={styles.labControls}>
+          <div className={styles.viewSwitch} aria-label="Prototype view">
+            <button className={labView === 'product' ? styles.activeView : ''} onClick={() => setLabView('product')}>Product UI</button>
+            <button className={labView === 'objects' ? styles.activeView : ''} onClick={() => setLabView('objects')}>Object study</button>
+          </div>
+          <div className={styles.themeSwitch} aria-label="Canvas theme">
+            <button className={theme === 'dark' ? styles.active : ''} onClick={() => setTheme('dark')}>Night</button>
+            <button className={theme === 'light' ? styles.active : ''} onClick={() => setTheme('light')}>Day</button>
+          </div>
         </div>
       </header>
 
-      <section className={styles.intro}>
+      {labView === 'product' ? <SequenceProductPrototype theme={theme} /> : <>
+        <section className={styles.intro}>
         <span>ONE IDEA · FIVE BEHAVIOURS</span>
         <h1>Not a mascot.<br /><em>A presence.</em></h1>
         <p>Same product, four different physical instincts. Drag the object. Change its state. Judge the behaviour, not a static mockup.</p>
@@ -143,7 +153,8 @@ export function WoodyDesignLab() {
             </motion.section>
           </motion.div>
         )}
-      </AnimatePresence>
+        </AnimatePresence>
+      </>}
     </main>
   )
 }
