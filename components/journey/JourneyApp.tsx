@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   initialPlaybackObserver,
   reducePlaybackObservation,
   type PlaybackObservation,
   type PlaybackObserverState,
 } from '@/lib/playbackObserver'
-import { exportJourneySessions, saveJourneySession } from '@/lib/journeyStorage'
+import {
+  exportJourneySessions,
+  loadJourneySessions,
+  nextPairedRunSlot,
+  saveJourneySession,
+} from '@/lib/journeyStorage'
+import { renderJourneyRunPrint, shareJourneyRunPrint } from '@/lib/journeyRunPrint'
 import type {
   JourneyDecision,
   JourneyPhaseType,
@@ -29,6 +36,7 @@ const PAIR_ORDER: JourneySessionMode[][] = [
 ]
 
 type Stage = 'setup' | 'preview' | 'active' | 'review'
+type ReviewAnswerKey = 'timingSupport' | 'manualManagementEffort' | 'sustainedEffortSupport' | 'preference' | 'chooseAgain'
 type Device = { id: string; is_active: boolean; name: string; type: string; volume_percent?: number }
 type PlayerState = {
   active: boolean
@@ -79,6 +87,32 @@ function fraction(progressMs = 0, durationMs = 0): number {
   return durationMs > 0 ? Math.max(0, Math.min(1, progressMs / durationMs)) : 0
 }
 
+function JourneySignal({ mode }: { mode: JourneySessionMode }) {
+  return (
+    <span className={`journey-signal journey-signal-${mode}`} aria-hidden="true">
+      <svg viewBox="0 0 160 160">
+        <path d="M80 8c18 0 25 16 40 21 17 6 31 1 34 19 3 17-12 25-14 41-3 17 8 27-4 40-12 13-27 3-43 12-13 8-18 18-34 9-15-9-10-24-23-34-12-9-31-6-30-24 0-17 17-22 21-37 5-17-5-29 9-39C45 3 63 8 80 8Z" />
+        <g><rect x="42" y="54" width="18" height="58" rx="9" /><rect x="71" y="45" width="18" height="70" rx="9" /><rect x="100" y="54" width="18" height="58" rx="9" /></g>
+        <circle cx="80" cy="128" r="8" />
+      </svg>
+    </span>
+  )
+}
+
+function freshReview(): Omit<JourneyRunReview, 'submittedAt'> {
+  return {
+    pairNumber: 1,
+    pairLeg: 1,
+    timingSupport: 3,
+    manualManagementEffort: 3,
+    sustainedEffortSupport: 3,
+    impactMoments: '',
+    mistimedTransitions: '',
+    overallPreference: 'no_preference',
+    chooseAdaptiveAgain: false,
+  }
+}
+
 export function JourneyApp() {
   const [stage, setStage] = useState<Stage>('setup')
   const [connected, setConnected] = useState<boolean | null>(null)
@@ -97,17 +131,10 @@ export function JourneyApp() {
   const [pairNumber, setPairNumber] = useState<1 | 2 | 3 | 4>(1)
   const [pairLeg, setPairLeg] = useState<1 | 2>(1)
   const mode: JourneySessionMode = PAIR_ORDER[pairNumber - 1][pairLeg - 1]
-  const [review, setReview] = useState<Omit<JourneyRunReview, 'submittedAt'>>({
-    pairNumber: 1,
-    pairLeg: 1,
-    timingSupport: 3,
-    manualManagementEffort: 3,
-    sustainedEffortSupport: 3,
-    impactMoments: '',
-    mistimedTransitions: '',
-    overallPreference: 'no_preference',
-    chooseAdaptiveAgain: false,
-  })
+  const [review, setReview] = useState<Omit<JourneyRunReview, 'submittedAt'>>(freshReview)
+  const [runPrint, setRunPrint] = useState<Blob | null>(null)
+  const [shareStatus, setShareStatus] = useState('')
+  const [reviewAnswers, setReviewAnswers] = useState<ReviewAnswerKey[]>([])
 
   const sessionRef = useRef<JourneySessionV1 | null>(null)
   const observerRef = useRef<PlaybackObserverState>(initialPlaybackObserver(mode))
@@ -124,8 +151,38 @@ export function JourneyApp() {
   }, [])
 
   useEffect(() => {
-    api<{ connected: true }>('/api/auth/token').then(() => setConnected(true)).catch(() => setConnected(false))
+    const slot = nextPairedRunSlot(loadJourneySessions())
+    api<{ connected: true }>('/api/auth/token')
+      .then(() => {
+        setConnected(true)
+        setPairNumber(slot.pairNumber)
+        setPairLeg(slot.pairLeg)
+      })
+      .catch(() => {
+        setConnected(false)
+        setPairNumber(slot.pairNumber)
+        setPairLeg(slot.pairLeg)
+      })
   }, [])
+
+  useEffect(() => {
+    if (stage !== 'review' || !session) return
+    let cancelled = false
+    const lastTrack = [...session.events].reverse().find((event) => event.track)?.track
+    const interventions = session.events.filter((event) => event.eventType === 'manual_transition' || event.eventType === 'user_override').length
+    renderJourneyRunPrint({
+      title: lastTrack?.name ?? 'A Woody run',
+      artist: lastTrack?.artist ?? 'Spotify journey',
+      intent: session.plan.intent,
+      durationMinutes: session.plan.durationMinutes,
+      impactMinute: session.plan.impactWindows.find((window) => window.enabled)?.minute,
+      interventions,
+      mode: session.plan.mode,
+    }).then((blob) => {
+      if (!cancelled) setRunPrint(blob)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [session, stage])
 
   const requestWakeLock = useCallback(async () => {
     const wakeLock = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<typeof wakeLockRef.current> } }).wakeLock
@@ -209,6 +266,8 @@ export function JourneyApp() {
     if (!plan) return
     setBusy(true)
     setError('')
+    setRunPrint(null)
+    setShareStatus('')
     setStatus('Checking the active Spotify device…')
     try {
       const deviceResult = await api<{ devices: Device[] }>('/api/player/devices')
@@ -452,7 +511,7 @@ export function JourneyApp() {
 
   const submitReview = () => {
     const current = sessionRef.current
-    if (!current) return
+    if (!current || reviewAnswers.length < 5) return
     const submittedAt = new Date().toISOString()
     const completeReview: JourneyRunReview = { ...review, pairNumber, pairLeg, submittedAt }
     commitSession({
@@ -478,90 +537,128 @@ export function JourneyApp() {
     URL.revokeObjectURL(url)
   }
 
+  const shareRunPrint = async () => {
+    if (!runPrint) return
+    const result = await shareJourneyRunPrint(runPrint)
+    if (result === 'shared') setShareStatus('Run print shared.')
+    if (result === 'downloaded') setShareStatus('Run print saved as PNG.')
+  }
+
+  const setUpNextLeg = () => {
+    const slot = nextPairedRunSlot(loadJourneySessions())
+    setPairNumber(slot.pairNumber)
+    setPairLeg(slot.pairLeg)
+    setReview(freshReview())
+    setReviewAnswers([])
+    setStage('setup')
+    setPlan(null)
+    setSession(null)
+    setPlayer(null)
+    setOverrideTrack(null)
+    setRunPrint(null)
+    setShareStatus('')
+    setError('')
+    setStatus('')
+  }
+
+  const reviewTrack = session ? [...session.events].reverse().find((event) => event.track)?.track : null
+  const interventionCount = session?.events.filter((event) => event.eventType === 'manual_transition' || event.eventType === 'user_override').length ?? 0
+  const impactMinute = session?.plan.impactWindows.find((window) => window.enabled)?.minute
+
   return (
-    <main className="journey-shell">
+    <main className={`journey-shell journey-stage-${stage}`}>
       <header className="journey-header">
-        <div><span className="journey-kicker">PRIVATE V0</span><h1>Woody</h1></div>
-        <span className={connected ? 'status-dot status-ok' : 'status-dot'}>{connected ? 'Spotify connected' : 'Spotify offline'}</span>
+        <div className="journey-wordmark"><span>W</span><strong>WOODY</strong></div>
+        <span className={connected ? 'status-dot status-ok' : 'status-dot'}>{connected ? 'Spotify ready' : connected === false ? 'Spotify offline' : 'Checking Spotify'}</span>
       </header>
 
-      {connected === false && (
-        <section className="journey-card journey-callout">
-          <h2>Connect Spotify first</h2>
-          <p>Woody controls the official Spotify app. Premium and an active iPhone device are required.</p>
-          <a className="journey-button" href="/api/auth/login">Connect Spotify</a>
-        </section>
-      )}
+      <AnimatePresence mode="wait" initial={false}>
+        {connected === null && <motion.section key="checking" className="journey-loading" exit={{ y: -12 }}><JourneySignal mode="adaptive" /><span>Checking Spotify…</span></motion.section>}
+        {connected === false && (
+          <motion.section key="connect" className="journey-connect" initial={{ y: 18 }} animate={{ y: 0 }} exit={{ y: -12 }}>
+            <JourneySignal mode="adaptive" />
+            <span className="journey-kicker">ONE SMALL HANDSHAKE</span>
+            <h1>Connect the music<br />you already use.</h1>
+            <p>Woody controls the official Spotify app. Premium and an active iPhone device are required.</p>
+            <a className="journey-button journey-button-primary" href="/api/auth/login">Connect Spotify <i>↗</i></a>
+          </motion.section>
+        )}
 
-      {stage === 'setup' && connected !== false && (
-        <section className="journey-stack">
-          <div className="journey-hero"><span>RUN COMPANION</span><h2>Shape the journey.<br />Keep your hands free.</h2><p>Adaptive sequencing versus your normal queue, measured in paired runs.</p></div>
-          <div className="journey-card">
-            <h3>Paired test</h3>
-            <div className="journey-grid-two">
-              <label>Pair<select value={pairNumber} onChange={(event) => setPairNumber(Number(event.target.value) as 1 | 2 | 3 | 4)}>{[1,2,3,4].map((number) => <option key={number} value={number}>{number}</option>)}</select></label>
-              <label>Leg<select value={pairLeg} onChange={(event) => setPairLeg(Number(event.target.value) as 1 | 2)}><option value={1}>1</option><option value={2}>2</option></select></label>
-            </div>
-            <p className="journey-note">Required mode: <strong>{mode === 'adaptive' ? 'Adaptive' : 'Control observation'}</strong>. Order is A/C, C/A, A/C, C/A.</p>
-          </div>
-          <div className="journey-card">
-            <label>What should this run feel like?<textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="Steady confidence, then one properly timed release…" maxLength={1000} /></label>
-            <label>Planned duration<div className="journey-range"><input type="range" min="10" max="120" step="5" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} /><strong>{durationMinutes} min</strong></div></label>
-          </div>
-          <div className="journey-card">
-            <h3>Anchor tracks <small>{anchors.length}/3</small></h3>
-            {anchors.map((anchor, index) => (
-              <div className="anchor-row" key={anchor.track.id}>
-                {anchor.track.albumArt && <Image src={anchor.track.albumArt} alt="" width={54} height={54} unoptimized />}
-                <div className="anchor-copy"><strong>{anchor.track.name}</strong><span>{anchor.track.artist}</span><textarea value={anchor.note} onChange={(event) => setAnchors((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, note: event.target.value } : item))} placeholder="What should Woody take from this? (optional)" /></div>
-                <div className="anchor-actions"><label><input type="radio" checked={anchor.role === 'opener'} onChange={() => setAnchors((current) => current.map((item, itemIndex) => ({ ...item, role: itemIndex === index ? 'opener' : 'reference' })))} /> opener</label><button onClick={() => setAnchors((current) => current.filter((item) => item.track.id !== anchor.track.id))}>Remove</button></div>
-              </div>
-            ))}
-            {anchors.length < 3 && <div className="search-box"><div className="search-line"><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void search() }} placeholder="Search Spotify" /><button onClick={() => void search()} disabled={busy}>Search</button></div>{searchResults.map((track) => <button className="search-result" key={track.id} onClick={() => addAnchor(track)}><span>{track.name}</span><small>{track.artist}</small></button>)}</div>}
-          </div>
-          <button className="journey-button journey-button-primary" disabled={busy || intent.trim().length < 3 || anchors.length < 1} onClick={() => void buildPreview()}>{busy ? 'Interpreting…' : 'Preview journey'}</button>
-        </section>
-      )}
+        {stage === 'setup' && connected === true && (
+          <motion.section key="setup" className="journey-stack" initial={{ x: -18 }} animate={{ x: 0 }} exit={{ x: 16 }}>
+            <div className="journey-hero"><span>COMPOSE · 01</span><h1>Where should this<br />run <em>take you?</em></h1><p>{mode === 'adaptive' ? 'Woody will lead this one and keep only one track ahead.' : 'You lead this one. Start your normal playlist or queue; Woody will only observe.'}</p></div>
 
-      {stage === 'preview' && plan && (
-        <section className="journey-stack">
-          <div className="journey-hero"><span>EDIT BEFORE MOVING</span><h2>The shape, not the surprise.</h2><p>Upcoming tracks stay hidden. Every assumption here is editable.</p></div>
-          <div className="journey-card"><h3>Journey phases</h3>{plan.phases.map((phase, index) => <div className="phase-row" key={phase.id}><input type="checkbox" checked={phase.accepted} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, accepted: event.target.checked } : item) })} /><div><strong>{phase.label} · {phase.startMinute}–{phase.endMinute} min</strong><textarea value={phase.description} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item) })} /></div></div>)}</div>
-          <div className="journey-card"><h3>Familiar / discovery</h3><div className="journey-range"><input type="range" min="0" max="100" value={Math.round(plan.familiarityTarget * 100)} onChange={(event) => setPlan({ ...plan, familiarityTarget: Number(event.target.value) / 100 })} /><strong>{Math.round(plan.familiarityTarget * 100)} / {100 - Math.round(plan.familiarityTarget * 100)}</strong></div></div>
-          <div className="journey-card"><h3>Impact windows</h3><p className="journey-note">Proposed moments of impact or salience—not measured dopamine.</p>{plan.impactWindows.map((window, index) => <div className="impact-row" key={window.id}><input type="checkbox" checked={window.enabled} onChange={(event) => setPlan({ ...plan, impactWindows: plan.impactWindows.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: event.target.checked } : item) })} /><input type="number" min="1" max={plan.durationMinutes - 1} value={window.minute} onChange={(event) => setPlan({ ...plan, impactWindows: plan.impactWindows.map((item, itemIndex) => itemIndex === index ? { ...item, minute: Number(event.target.value) } : item) })} /><span>minutes</span></div>)}</div>
-          {plan.anchors.map((anchor, anchorIndex) => <div className="journey-card" key={anchor.track.id}><h3>{anchor.track.name}</h3><p className="journey-note">Suggested structure from your note. Edit, delete, or confirm it.</p>{TAG_CATEGORIES.map((category) => <label key={category}>{category}<input value={(anchor.confirmedTags[category] ?? anchor.suggestedTags[category] ?? []).join(', ')} onChange={(event) => updateTag(anchorIndex, category, event.target.value)} /></label>)}</div>)}
-          <div className="journey-actions"><button className="journey-button journey-button-quiet" onClick={() => setStage('setup')}>Back</button><button className="journey-button journey-button-primary" disabled={busy} onClick={() => void startJourney()}>{busy ? 'Starting…' : mode === 'adaptive' ? 'Start adaptive run' : 'Start control observation'}</button></div>
-        </section>
-      )}
+            {process.env.NODE_ENV === 'development' && <details className="journey-instrumentation"><summary>Test instrumentation</summary><div className="journey-grid-two"><label>Pair<select value={pairNumber} onChange={(event) => setPairNumber(Number(event.target.value) as 1 | 2 | 3 | 4)}>{[1,2,3,4].map((number) => <option key={number} value={number}>{number}</option>)}</select></label><label>Leg<select value={pairLeg} onChange={(event) => setPairLeg(Number(event.target.value) as 1 | 2)}><option value={1}>1</option><option value={2}>2</option></select></label></div></details>}
 
-      {stage === 'active' && session && (
-        <section className="journey-stack journey-active">
-          <div className="journey-live"><span className="live-pulse" /><span>{session.plan.mode === 'adaptive' ? 'ADAPTIVE' : 'CONTROL'} · {session.status === 'paused_override' ? 'PAUSED' : 'OBSERVING'}</span></div>
-          <div className="now-card">{player?.track?.albumArt && <Image src={player.track.albumArt} alt="" width={480} height={480} unoptimized />}<span>NOW PLAYING</span><h2>{player?.track?.name ?? 'Waiting for Spotify…'}</h2><p>{player?.track?.artist ?? 'Open Spotify and start playback'}</p>{player?.track && <div className="progress-track"><i style={{ width: `${fraction(player.progressMs, player.track.durationMs) * 100}%` }} /></div>}</div>
-          <div className="journey-card"><h3>What Woody is doing</h3><p>{status}</p><p className="journey-note">No live rating required. Headphone, Watch, and phone skips are observed through Spotify state.</p></div>
-          {overrideTrack && <div className="journey-card journey-callout"><h3>You changed direction</h3><p>Automation stopped rather than fighting your choice.</p><button className="journey-button journey-button-primary" disabled={busy} onClick={() => void resumeFromOverride()}>Resume from this track</button><button className="journey-button journey-button-quiet" onClick={endJourney}>End session</button></div>}
-          {!overrideTrack && <button className="journey-button journey-button-danger" onClick={endJourney}>End run</button>}
-        </section>
-      )}
+            <section className="journey-compose-panel">
+              <label className="journey-intent"><span>THE FEELING</span><textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="Patient at first. Precise when it opens." maxLength={1000} /></label>
+              <div className="journey-duration"><div><span>PLANNED DURATION</span><strong>{durationMinutes}<small>min</small></strong></div><input aria-label="Planned duration" type="range" min="10" max="120" step="1" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} /><div className="journey-duration-ticks"><span>10</span><span>35</span><span>60</span><span>90</span><span>120</span></div><div className="journey-presets">{[20,35,50].map((value) => <button key={value} className={durationMinutes === value ? 'active' : ''} onClick={() => setDurationMinutes(value)}>{value} min</button>)}</div></div>
+            </section>
 
-      {stage === 'review' && session && (
-        <section className="journey-stack">
-          <div className="journey-hero"><span>REALITY CONTACT</span><h2>How did it actually work?</h2><p>Self-report stays separate from playback behavior.</p></div>
-          <div className="journey-card review-card">
-            {([['timingSupport', 'Perceived timing / support'], ['manualManagementEffort', 'Manual-management effort'], ['sustainedEffortSupport', 'Sustained-effort support']] as const).map(([field, label]) => <label key={field}>{label}<input type="range" min="1" max="5" value={review[field]} onChange={(event) => setReview({ ...review, [field]: Number(event.target.value) })} /><strong>{review[field]} / 5</strong></label>)}
-            <label>Specifically well-timed impact moments<textarea value={review.impactMoments} onChange={(event) => setReview({ ...review, impactMoments: event.target.value })} /></label>
-            <label>Mistimed or generic transitions<textarea value={review.mistimedTransitions} onChange={(event) => setReview({ ...review, mistimedTransitions: event.target.value })} /></label>
-            <label>Overall preference<select value={review.overallPreference} onChange={(event) => setReview({ ...review, overallPreference: event.target.value as JourneyRunReview['overallPreference'] })}><option value="adaptive">Adaptive</option><option value="control_observation">Control</option><option value="no_preference">No preference yet</option></select></label>
-            <label className="check-line"><input type="checkbox" checked={review.chooseAdaptiveAgain} onChange={(event) => setReview({ ...review, chooseAdaptiveAgain: event.target.checked })} /> I would choose adaptive for another run</label>
-          </div>
-          <button className="journey-button journey-button-primary" onClick={submitReview}>Save run evidence</button>
-          <button className="journey-button journey-button-quiet" onClick={downloadExport}>Export journey JSON</button>
-          <button className="journey-button journey-button-quiet" onClick={() => { setStage('setup'); setPlan(null); setSession(null); setPlayer(null); setOverrideTrack(null); setError(''); setStatus('') }}>Set up matched leg</button>
-        </section>
-      )}
+            <section className="journey-anchors">
+              <div className="journey-section-heading"><div><span>DIRECTION</span><h2>Anchor tracks</h2></div><strong>{anchors.length} / 3</strong></div>
+              {anchors.map((anchor, index) => (
+                <article className="anchor-row" key={anchor.track.id}>
+                  <span className="anchor-art">{anchor.track.albumArt && <Image src={anchor.track.albumArt} alt="" width={88} height={88} unoptimized />}</span>
+                  <div className="anchor-copy"><strong>{anchor.track.name}</strong><span>{anchor.track.artist}</span><textarea value={anchor.note} onChange={(event) => setAnchors((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, note: event.target.value } : item))} placeholder="What should Woody take from this?" /></div>
+                  <div className="anchor-actions"><label><input type="radio" checked={anchor.role === 'opener'} onChange={() => setAnchors((current) => current.map((item, itemIndex) => ({ ...item, role: itemIndex === index ? 'opener' : 'reference' })))} /> Opener</label><button onClick={() => setAnchors((current) => current.filter((item) => item.track.id !== anchor.track.id))}>Remove</button></div>
+                </article>
+              ))}
+              {anchors.length < 3 && <div className="search-box"><div className="search-line"><input aria-label="Search Spotify" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void search() }} placeholder="Search a track or artist" /><button onClick={() => void search()} disabled={busy}>Search</button></div><div className="search-results">{searchResults.map((track) => <button className="search-result" key={track.id} onClick={() => addAnchor(track)}>{track.albumArt ? <Image src={track.albumArt} alt="" width={46} height={46} unoptimized /> : <i />}<span><strong>{track.name}</strong><small>{track.artist}</small></span><b>+</b></button>)}</div></div>}
+            </section>
+            <button className="journey-button journey-button-primary journey-main-action" disabled={busy || intent.trim().length < 3 || anchors.length < 1} onClick={() => void buildPreview()}>{busy ? 'Listening to the shape…' : 'Preview the journey'} <i>→</i></button>
+          </motion.section>
+        )}
 
-      {error && <div className="journey-error" role="alert">{error}</div>}
-      <footer>Private prototype · Running first · One-decision lookahead</footer>
+        {stage === 'preview' && plan && (
+          <motion.section key="preview" className="journey-stack" initial={{ x: 18 }} animate={{ x: 0 }} exit={{ x: -16 }}>
+            <div className="journey-hero"><span>PREVIEW · 02</span><h1>The arc, not<br /><em>the surprise.</em></h1><p>Upcoming tracks stay hidden. Tap any part of the shape to tune it.</p></div>
+            <section className="journey-shape">
+              <svg viewBox="0 0 340 170" aria-hidden="true"><path d="M12 145C45 126 56 73 104 89s55-61 104-37 58 70 120 5" />{plan.phases.filter((phase) => phase.accepted).slice(0, 4).map((phase, index) => <circle key={phase.id} cx={[12,104,208,328][index]} cy={[145,89,52,57][index]} r="5" />)}</svg>
+              <div>{plan.phases.filter((phase) => phase.accepted).slice(0, 4).map((phase) => <span key={phase.id}>{phase.label}</span>)}</div>
+            </section>
+            <section className="journey-editor-group"><div className="journey-section-heading"><div><span>PHASES</span><h2>How it moves</h2></div></div>{plan.phases.map((phase, index) => <details className="phase-editor" key={phase.id}><summary><input aria-label={`Use ${phase.label} phase`} type="checkbox" checked={phase.accepted} onClick={(event) => event.stopPropagation()} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, accepted: event.target.checked } : item) })} /><span><strong>{phase.label}</strong><small>{phase.startMinute}–{phase.endMinute} min</small></span><i>+</i></summary><textarea aria-label={`${phase.label} description`} value={phase.description} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item) })} /></details>)}</section>
+            <section className="journey-balance"><div><span>FAMILIAR GROUND</span><strong>{Math.round(plan.familiarityTarget * 100)}<small> / {100 - Math.round(plan.familiarityTarget * 100)} discovery</small></strong></div><input aria-label="Familiarity balance" type="range" min="0" max="100" value={Math.round(plan.familiarityTarget * 100)} onChange={(event) => setPlan({ ...plan, familiarityTarget: Number(event.target.value) / 100 })} /></section>
+            <section className="journey-impact"><div className="journey-section-heading"><div><span>IMPACT WINDOWS</span><h2>Moments with weight</h2></div></div><p>Proposed moments of salience—not measured dopamine.</p>{plan.impactWindows.map((window, index) => <label key={window.id}><input type="checkbox" checked={window.enabled} onChange={(event) => setPlan({ ...plan, impactWindows: plan.impactWindows.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: event.target.checked } : item) })} /><span>around</span><input aria-label="Impact minute" type="number" min="1" max={plan.durationMinutes - 1} value={window.minute} onChange={(event) => setPlan({ ...plan, impactWindows: plan.impactWindows.map((item, itemIndex) => itemIndex === index ? { ...item, minute: Number(event.target.value) } : item) })} /><strong>min</strong></label>)}</section>
+            <details className="journey-tags"><summary><span><small>OPTIONAL DETAIL</small><strong>Fine-tune what Woody heard</strong></span><i>+</i></summary>{plan.anchors.map((anchor, anchorIndex) => <article key={anchor.track.id}><h3>{anchor.track.name}</h3>{TAG_CATEGORIES.map((category) => <label key={category}><span>{category}</span><input value={(anchor.confirmedTags[category] ?? anchor.suggestedTags[category] ?? []).join(', ')} onChange={(event) => updateTag(anchorIndex, category, event.target.value)} /></label>)}</article>)}</details>
+            <div className="journey-actions"><button className="journey-button journey-button-quiet" onClick={() => setStage('setup')}>Back</button><button className="journey-button journey-button-primary" disabled={busy} onClick={() => void startJourney()}>{busy ? 'Preparing Spotify…' : mode === 'adaptive' ? 'Start this run' : 'Begin observation'} <i>→</i></button></div>
+          </motion.section>
+        )}
+
+        {stage === 'active' && session && (
+          <motion.section key="active" className="journey-active" initial={{ scale: .97 }} animate={{ scale: 1 }} exit={{ scale: .98 }}>
+            <div className="journey-live"><span className="live-pulse" /><span>{session.status === 'paused_override' ? 'PAUSED FOR YOU' : session.plan.mode === 'adaptive' ? 'WOODY IS MOVING' : 'WOODY IS LISTENING'}</span></div>
+            <div className="now-artwork">{player?.track?.albumArt ? <Image src={player.track.albumArt} alt={`${player.track.name} artwork`} width={640} height={640} unoptimized priority /> : <div className="now-artwork-empty" />}<JourneySignal mode={session.plan.mode} /></div>
+            <div className="now-copy"><span>NOW PLAYING</span><h1>{player?.track?.name ?? 'Waiting for Spotify…'}</h1><p>{player?.track?.artist ?? 'Open Spotify and start playback'}</p>{player?.track && <div className="progress-track"><i style={{ width: `${fraction(player.progressMs, player.track.durationMs) * 100}%` }} /></div>}</div>
+            <div className="journey-observation" aria-live="polite"><span className="observation-orbit" /><p><strong>{session.plan.mode === 'adaptive' ? 'One decision ahead' : 'Observation only'}</strong><small>{status || 'Headphone, Watch, and phone changes are observed automatically.'}</small></p></div>
+            {overrideTrack && <motion.aside className="journey-override" initial={{ y: '100%' }} animate={{ y: 0 }}><span>YOU CHANGED DIRECTION</span><h2>Woody stopped rather than fighting you.</h2><p>Continue from <strong>{overrideTrack.name}</strong>, or finish here.</p><button className="journey-button journey-button-primary" disabled={busy} onClick={() => void resumeFromOverride()}>Follow this direction</button><button className="journey-button journey-button-quiet" onClick={endJourney}>End the run</button></motion.aside>}
+            {!overrideTrack && <button className="journey-end" onClick={endJourney}>End run</button>}
+          </motion.section>
+        )}
+
+        {stage === 'review' && session && (
+          <motion.section key="review" className="journey-stack journey-afterglow" initial={{ y: 22 }} animate={{ y: 0 }} exit={{ y: -12 }}>
+            <section className="afterglow-visual"><span className="afterglow-art">{reviewTrack?.albumArt && <Image src={reviewTrack.albumArt} alt="" width={120} height={120} unoptimized />}</span><svg viewBox="0 0 300 110" aria-hidden="true"><path d="M2 94C40 77 56 86 80 58s46 20 82-17 57 18 85-8 40-14 51-28" /><circle cx="162" cy="41" r="6" /></svg>{impactMinute && <strong>~{impactMinute} min</strong>}</section>
+            <div className="journey-hero afterglow-heading"><span>AFTERGLOW · 04</span><h1>Your run left<br /><em>a shape.</em></h1><p>Woody observed {session.playedTrackIds.length} tracks and {interventionCount} manual {interventionCount === 1 ? 'change' : 'changes'}. Your answers remain a separate evidence channel.</p></div>
+
+            <section className="review-signals">
+              {([['timingSupport', 'Did the timing support you?', 'Not at all', 'Exactly'], ['manualManagementEffort', 'How much did you manage it?', 'None', 'Constant'], ['sustainedEffortSupport', 'Did it carry sustained effort?', 'Not enough', 'Carried me']] as const).map(([field, label, low, high]) => <fieldset key={field}><legend>{label}</legend><div>{[1,2,3,4,5].map((value) => <button type="button" aria-label={`${label}: ${value} of 5`} key={value} className={reviewAnswers.includes(field) && review[field] === value ? 'active' : ''} onClick={() => { setReview({ ...review, [field]: value }); setReviewAnswers((current) => current.includes(field) ? current : [...current, field]) }}>{value}</button>)}</div><p><span>{low}</span><span>{high}</span></p></fieldset>)}
+            </section>
+
+            <section className="review-moments"><label><span><i>✦</i><strong>A moment that landed</strong><small>Optional, but especially valuable</small></span><textarea value={review.impactMoments} onChange={(event) => setReview({ ...review, impactMoments: event.target.value })} placeholder="What happened, and when?" /></label><label><span><i>≈</i><strong>A moment that broke it</strong><small>Mistimed, generic, or distracting</small></span><textarea value={review.mistimedTransitions} onChange={(event) => setReview({ ...review, mistimedTransitions: event.target.value })} placeholder="What felt wrong?" /></label></section>
+
+            <fieldset className="review-preference"><legend>Which would you choose for the next matched run?</legend><div>{([['adaptive', 'Woody'], ['control_observation', 'My queue'], ['no_preference', 'Not sure']] as const).map(([value, label]) => <button type="button" key={value} className={reviewAnswers.includes('preference') && review.overallPreference === value ? 'active' : ''} onClick={() => { setReview({ ...review, overallPreference: value }); setReviewAnswers((current) => current.includes('preference') ? current : [...current, 'preference']) }}>{label}</button>)}</div></fieldset>
+            <section className="review-return"><span><small>NEXT TIME</small><strong>Would you take Woody again?</strong></span><div><button className={reviewAnswers.includes('chooseAgain') && review.chooseAdaptiveAgain ? 'active' : ''} onClick={() => { setReview({ ...review, chooseAdaptiveAgain: true }); setReviewAnswers((current) => current.includes('chooseAgain') ? current : [...current, 'chooseAgain']) }}>Yes</button><button className={reviewAnswers.includes('chooseAgain') && !review.chooseAdaptiveAgain ? 'active' : ''} onClick={() => { setReview({ ...review, chooseAdaptiveAgain: false }); setReviewAnswers((current) => current.includes('chooseAgain') ? current : [...current, 'chooseAgain']) }}>No</button></div></section>
+
+            <button className="journey-button journey-button-primary journey-main-action" disabled={reviewAnswers.length < 5 || Boolean(session.review)} onClick={submitReview}>{session.review ? 'Evidence saved' : reviewAnswers.length < 5 ? `Answer ${5 - reviewAnswers.length} more` : 'Save this run'} <i>{session.review ? '✓' : '→'}</i></button>
+            <section className="journey-run-print"><div><span>RUN PRINT</span><h2>A shareable trace,<br />not your private data.</h2><p>No route, listening history, or written reflection is included.</p></div><button disabled={!runPrint} onClick={() => void shareRunPrint()}>{runPrint ? 'Share or save PNG' : 'Building print…'} <i>↗</i></button>{shareStatus && <small>{shareStatus}</small>}</section>
+            <button className="journey-button journey-button-quiet" onClick={setUpNextLeg}>Set up the next run</button>
+            <details className="journey-data-tools"><summary>Session data</summary><button onClick={downloadExport}>Export journey JSON</button></details>
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      {error && <div className="journey-error" role="alert"><strong>Woody hit a snag.</strong><span>{error}</span></div>}
     </main>
   )
 }
