@@ -15,7 +15,7 @@ Add it to .env.local:
 
 GPU notes:
   - T4 (gpu="T4") is sufficient for CLAP inference; ~$0.59/hr per Modal pricing
-  - container_idle_timeout=120 lets the container shut down 2 min after
+  - scaledown_window=120 lets the container shut down 2 min after
     last request, keeping costs near $0 for idle dev work
   - First request to a cold container pays the model download + load (~30-60s)
   - WOODY_PRELOAD_CLAP=1 forces eager load at container start (preferred for
@@ -51,18 +51,23 @@ image = (
         "httpx==0.27.0",
         "numpy==1.26.4",
     )
-    # Copy source files into the image so the running container can import them
-    .add_local_dir(".", "/woody-acoustic", ignore=[".venv/**", "__pycache__/**", "*.pyc", "data/**"])
+    # Whitelist runtime source only. Do not upload local data, test output, docs,
+    # environment files, or the rest of the repository.
+    .add_local_file("main.py", "/woody-acoustic/main.py")
+    .add_local_file("service.py", "/woody-acoustic/service.py")
+    .add_local_dir("routers", "/woody-acoustic/routers")
+    .add_local_dir("services", "/woody-acoustic/services")
+    .add_local_dir("db", "/woody-acoustic/db")
 )
 
-app = modal.App(APP_NAME, image=image)
+app = modal.App(APP_NAME, image=image, include_source=False)
 corpus_volume = modal.Volume.from_name("woody-corpus", create_if_missing=True)
 service_secret = modal.Secret.from_name("woody-acoustic-service", required_keys=["WOODY_SERVICE_TOKEN"])
 
 
 @app.function(
     gpu="T4",                       # CLAP inference — T4 is plenty
-    container_idle_timeout=120,     # idle-down after 2 min, keeps dev cost low
+    scaledown_window=120,           # idle-down after 2 min, keeps dev cost low
     timeout=300,                    # allow 5-min requests (batch of 50 tracks on CPU edge case)
     memory=4096,                    # CLAP ~1.5GB model + processing headroom
     cpu=2.0,
