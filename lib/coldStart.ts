@@ -66,7 +66,6 @@ export function computeTerritoryFromProbe(signals: ProbeSignal[]): CLAPEmbedding
       )
     }
     const w = PROBE_SIGNAL_WEIGHTS[s.signal]
-    if (w === 0) continue
     for (let i = 0; i < EMBEDDING_DIM; i++) {
       weighted[i] += w * s.embedding[i]
     }

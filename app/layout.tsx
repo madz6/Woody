@@ -28,8 +28,14 @@ const spaceMono = Space_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Woody',
-  description: 'Acoustic music discovery',
+  title: 'Woody Run Companion',
+  description: 'A private adaptive Spotify journey companion.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'Woody',
+    statusBarStyle: 'black-translucent',
+  },
 }
 
 export default function RootLayout({

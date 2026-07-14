@@ -32,6 +32,7 @@ import type {
   ArcStep,
   CLAPEmbedding,
   PersonaLens,
+  TasteProfile,
   Track,
 } from '@/lib/types'
 
@@ -75,6 +76,24 @@ function parseArcShapeOverride(value: unknown): ArcShape | undefined {
   return undefined
 }
 
+function parseTasteProfile(value: unknown): TasteProfile | null {
+  if (!value || typeof value !== 'object') return null
+  const profile = value as Record<string, unknown>
+  const tones = ['violet', 'amber', 'moss', 'rose'] as const
+  if (!Array.isArray(profile.dominantTones) || !profile.dominantTones.every((tone) => tones.includes(tone))) return null
+  if (!Array.isArray(profile.commonMoods) || !profile.commonMoods.every((mood) => typeof mood === 'string')) return null
+  if (!Array.isArray(profile.topArtists) || !profile.topArtists.every((artist) => typeof artist === 'string')) return null
+  if (profile.avgEnergy !== 'low' && profile.avgEnergy !== 'medium' && profile.avgEnergy !== 'high') return null
+  if (typeof profile.sessionCount !== 'number' || !Number.isFinite(profile.sessionCount) || profile.sessionCount < 0) return null
+  return {
+    dominantTones: profile.dominantTones as TasteProfile['dominantTones'],
+    commonMoods: profile.commonMoods as string[],
+    avgEnergy: profile.avgEnergy,
+    topArtists: profile.topArtists as string[],
+    sessionCount: Math.floor(profile.sessionCount),
+  }
+}
+
 export async function POST(request: NextRequest) {
   const started = Date.now()
 
@@ -111,6 +130,7 @@ export async function POST(request: NextRequest) {
   const currentPosition = parseCurrentPosition(body.currentPosition)
   const arcShapeOverride = parseArcShapeOverride(body.arcShape)
   const zoneId = typeof body.zoneId === 'string' && body.zoneId.length > 0 ? body.zoneId : null
+  const tasteProfile = parseTasteProfile(body.tasteProfile)
 
   const shapeChoice = arcShapeOverride
     ? { shape: arcShapeOverride, matched: ['override'] as string[] }
@@ -126,7 +146,7 @@ export async function POST(request: NextRequest) {
       embedText(intent),
       intentToSuggestions(
         intent,
-        body.tasteProfile ?? null,
+        tasteProfile,
         undefined,
         zoneId,
         {

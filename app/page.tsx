@@ -1,5 +1,5 @@
-import { HomeScreen } from '@/components/screens/HomeScreen'
+import { JourneyApp } from '@/components/journey/JourneyApp'
 
 export default function Home() {
-  return <HomeScreen />
+  return <JourneyApp />
 }

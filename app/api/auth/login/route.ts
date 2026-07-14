@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -30,11 +31,13 @@ export async function GET() {
     )
   }
 
+  const state = randomBytes(32).toString('base64url')
   const params = new URLSearchParams({
     client_id: clientId,
     response_type: 'code',
     redirect_uri: redirectUri,
     scope: SCOPES,
+    state,
     show_dialog: 'false',
   })
 
@@ -42,5 +45,13 @@ export async function GET() {
     console.info('[spotify/login] redirect_uri (must match Spotify Dashboard exactly):', redirectUri)
   }
 
-  return NextResponse.redirect(`https://accounts.spotify.com/authorize?${params}`)
+  const response = NextResponse.redirect(`https://accounts.spotify.com/authorize?${params}`)
+  response.cookies.set('spotify_oauth_state', state, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 10 * 60,
+  })
+  return response
 }

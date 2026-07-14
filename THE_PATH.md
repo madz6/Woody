@@ -71,11 +71,12 @@ Purpose: determine whether adaptive sequencing provides meaningful value beyond 
 
 Current actions:
 1. Run a proper follow-up problem interview with the motorbike rider. Do not pitch Woody first. Understand frequency, preparation time, what ruins a queue, what "aligned with the route" means, and what a successful ride sounds like.
-2. Run 6–8 founder sessions in matched pairs: Woody-assisted versus the founder's normal playlist/queue.
+2. Run four founder pairs in balanced order: A/C, C/A, A/C, C/A, matching route, duration, and intended effort.
 3. Before each session, capture the intended direction in plain language.
-4. During safe founder tests only, use **Lift / Hold / Release** as instrumentation to create ground-truth labels. These controls are not the intended final UX.
-5. Review the transition timeline after each session and mark what felt right, mistimed, generic, or surprising.
-6. End every week with observed evidence: a completed journey, an interview, or an external reaction—not another strategy document.
+4. During runs, require no ratings. Observe natural Spotify transitions from headphones, Apple Watch, or phone; keep Lift / Hold / Release behind a development instrumentation flag only.
+5. Record exact listened fraction at every playback change. Early user-initiated changes create a temporary continuous signal of `1 - listenedFraction`; completion alone remains neutral.
+6. Review the transition timeline after each session and separately record timing/support, management effort, sustained-effort support, impact moments, weak transitions, and preference.
+7. End every week with observed evidence: a completed journey, an interview, or an external reaction—not another strategy document.
 
 For motorbike use, the target UX is zero-touch during the ride. Route shape, speed, progress, prior preferences, and post-ride review are candidate inputs. No interaction design should encourage phone use while riding.
 
@@ -103,11 +104,11 @@ The question is:
 
 Pre-register the internal gate before running sessions. Directional evidence should include:
 
-- Most requested transitions move in the intended direction.
-- Woody is preferred in most matched founder sessions.
-- Multiple moments feel specifically well-timed rather than merely coherent.
-- The founder voluntarily wants to use it again.
-- The motorbike follow-up confirms recurring pain and a desire for adaptation, not only enjoyment of manual queue-building.
+- Adaptive is preferred in at least three of four pairs.
+- Adaptive requires fewer manual interventions in at least three pairs.
+- At least two sessions contain a specifically well-timed impact moment.
+- The founder chooses adaptive for a ninth run.
+- The motorbike follow-up confirms recurring pain and willingness to test a later safe prototype, not only enjoyment of manual queue-building.
 
 If the gate passes, test a safe version with three non-founder users and begin comparing cadence, pace, heart rate, route progress, and history as predictors of explicit feedback.
 
@@ -152,5 +153,19 @@ These are not rejected. They are unearned by current evidence.
 5. Build the minimal `/api/journey/next` loop and test surface.
 6. Run the first matched founder sessions.
 7. Review the evidence before adding passive sensing.
+
+After the first working adaptive session, feature work pauses until the first matched pair is complete. If the gate fails, permit one bounded correction to the observed failure category and repeat one pair; do not add sensors, route integration, fascia, or architecture.
+
+## 8. Motorbike problem interview
+
+Conduct this before showing Woody and do not test Woody while riding in V0:
+
+1. Reconstruct the last ride and exact queue-planning workflow.
+2. Measure preparation time, frequency, and how often the queue is reused or rebuilt.
+3. Ask what makes a queue fail and what "aligned with the route" means in concrete moments.
+4. Inventory helmet, watch, and phone controls, including what can be used safely.
+5. Ask what happens when route, traffic, or speed differs from the estimate.
+6. Determine whether queue-building is painful work, an enjoyable ritual, or both.
+7. Only then explain adaptive one-track sequencing and ask what would create or destroy trust.
 
 *This direction is locked for the two-week experiment, not forever. Evidence may change the wedge; it should not restart the documentation cathedral.*

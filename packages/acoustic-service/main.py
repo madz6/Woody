@@ -24,11 +24,13 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
-from routers import arc, embed, projection
+from routers import arc, embed, journey, projection
 from services.clap_service import MODEL_ID, get_clap, is_clap_loaded
 
 # Import the legacy app so we can copy its routes onto the new app. The legacy
@@ -67,9 +69,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+SERVICE_TOKEN = os.environ.get("WOODY_SERVICE_TOKEN", "").strip()
+ALLOW_UNAUTHENTICATED = os.environ.get("WOODY_ALLOW_UNAUTHENTICATED", "0") == "1"
+
+
+@app.middleware("http")
+async def authenticate_service(request: Request, call_next):
+    if request.url.path == "/health":
+        return await call_next(request)
+    if not SERVICE_TOKEN:
+        if ALLOW_UNAUTHENTICATED:
+            return await call_next(request)
+        return JSONResponse({"error": "service_token_not_configured"}, status_code=503)
+    expected = f"Bearer {SERVICE_TOKEN}"
+    if not secrets.compare_digest(request.headers.get("authorization", ""), expected):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return await call_next(request)
+
 # New routers (Layer 2 navigation + Layer 3 display projection + arc generator)
 app.include_router(embed.router)
 app.include_router(arc.router)
+app.include_router(journey.router)
 app.include_router(projection.router)
 
 

@@ -56,6 +56,8 @@ image = (
 )
 
 app = modal.App(APP_NAME, image=image)
+corpus_volume = modal.Volume.from_name("woody-corpus", create_if_missing=True)
+service_secret = modal.Secret.from_name("woody-acoustic-service", required_keys=["WOODY_SERVICE_TOKEN"])
 
 
 @app.function(
@@ -64,7 +66,8 @@ app = modal.App(APP_NAME, image=image)
     timeout=300,                    # allow 5-min requests (batch of 50 tracks on CPU edge case)
     memory=4096,                    # CLAP ~1.5GB model + processing headroom
     cpu=2.0,
-    secrets=[],                     # add modal.Secret.from_name("woody-spotify") if seeding via Modal
+    secrets=[service_secret],
+    volumes={"/data": corpus_volume},
 )
 @modal.asgi_app()
 def fastapi_app():
@@ -76,6 +79,7 @@ def fastapi_app():
     sys.path.insert(0, "/woody-acoustic")
     # Preload CLAP on container start so the first inference doesn't pay the load cost
     os.environ["WOODY_PRELOAD_CLAP"] = "1"
+    os.environ["WOODY_DB_PATH"] = "/data/woody.db"
 
     from main import app as _app  # noqa: PLC0415
     return _app

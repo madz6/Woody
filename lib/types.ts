@@ -268,3 +268,151 @@ export interface EmbedAudioBatchResult {
   audioSource?: 'preview_url' | 'itunes'
   error?: string
 }
+
+// Journey V0 public contracts
+
+export type AttributionProvenance =
+  | 'user_text'
+  | 'model_suggested'
+  | 'user_confirmed'
+  | 'behavior_observed'
+  | 'system_inferred'
+
+export type JourneyPhaseType = 'settle' | 'build' | 'sustain' | 'impact' | 'release'
+export type Knownness = 'known_track' | 'known_artist' | 'unseen'
+export type JourneySessionMode = 'adaptive' | 'control_observation'
+
+export type JourneyTagCategory =
+  | 'function'
+  | 'movement'
+  | 'rhythm'
+  | 'texture'
+  | 'impact'
+  | 'relationship'
+
+export interface JourneyAttribution {
+  field: string
+  value: string
+  source: AttributionProvenance
+  recordedAt: string
+}
+
+export interface JourneyAnchor {
+  track: Track
+  role: 'opener' | 'reference'
+  note: string
+  suggestedTags: Partial<Record<JourneyTagCategory, string[]>>
+  confirmedTags: Partial<Record<JourneyTagCategory, string[]>>
+  attribution: JourneyAttribution[]
+}
+
+export interface JourneyPhase {
+  id: string
+  type: JourneyPhaseType
+  label: string
+  description: string
+  startMinute: number
+  endMinute: number
+  accepted: boolean
+}
+
+export interface JourneyImpactWindow {
+  id: string
+  minute: number
+  enabled: boolean
+  description: string
+}
+
+export interface JourneyPlanV1 {
+  version: 1
+  sessionId: string
+  mode: JourneySessionMode
+  activity: 'running'
+  intent: string
+  durationMinutes: number
+  phases: JourneyPhase[]
+  familiarityTarget: number
+  impactWindows: JourneyImpactWindow[]
+  anchors: JourneyAnchor[]
+  attribution: JourneyAttribution[]
+  createdAt: string
+}
+
+export interface JourneyTransitionDiagnostics {
+  transitionDistance: number
+  targetDistance: number
+  familiarityFit: number
+  skipPenalty: number
+  relaxationLevel: number
+  candidateCount: number
+  latencyMs: number
+}
+
+export interface JourneyDecision {
+  decisionId: string
+  selectedTrack: Track
+  phase: JourneyPhaseType
+  knownness: Knownness
+  confidence: number
+  diagnostics: JourneyTransitionDiagnostics
+}
+
+export type JourneyEventType =
+  | 'session_started'
+  | 'track_started'
+  | 'track_completed'
+  | 'manual_transition'
+  | 'user_override'
+  | 'queue_added'
+  | 'queue_paused'
+  | 'session_ended'
+  | 'explicit_approval'
+  | 'explicit_rejection'
+  | 'wake_lock_lost'
+  | 'network_error'
+
+export interface JourneyEventV1 {
+  version: 1
+  timestamp: string
+  eventType: JourneyEventType
+  track?: Track
+  rawPositionMs?: number
+  rawDurationMs?: number
+  listenedFraction?: number
+  initiatingSource: 'woody' | 'user' | 'spotify' | 'system'
+  decisionId?: string
+  attribution?: JourneyAttribution
+}
+
+export interface JourneySkipPenalty {
+  trackId: string
+  weight: number
+  decisionsRemaining: number
+}
+
+export interface JourneySessionV1 {
+  version: 1
+  plan: JourneyPlanV1
+  status: 'planned' | 'active' | 'paused_override' | 'completed'
+  decisions: JourneyDecision[]
+  events: JourneyEventV1[]
+  playedTrackIds: string[]
+  rejectedTrackIds: string[]
+  skipPenalties: JourneySkipPenalty[]
+  startedAt?: string
+  endedAt?: string
+  review?: JourneyRunReview
+}
+
+export interface JourneyRunReview {
+  pairNumber: 1 | 2 | 3 | 4
+  pairLeg: 1 | 2
+  timingSupport: number
+  manualManagementEffort: number
+  sustainedEffortSupport: number
+  impactMoments: string
+  mistimedTransitions: string
+  overallPreference: 'adaptive' | 'control_observation' | 'no_preference'
+  chooseAdaptiveAgain: boolean
+  submittedAt: string
+}

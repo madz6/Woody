@@ -34,6 +34,7 @@ import type {
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 const ACOUSTIC_SERVICE_URL = process.env.ACOUSTIC_SERVICE_URL
+const ACOUSTIC_SERVICE_TOKEN = process.env.ACOUSTIC_SERVICE_TOKEN
 const EMBED_TIMEOUT_MS = Number(process.env.ACOUSTIC_SERVICE_EMBED_TIMEOUT_MS ?? 30_000)
 const BATCH_TIMEOUT_MS = Number(process.env.ACOUSTIC_SERVICE_BATCH_TIMEOUT_MS ?? 120_000)
 const ARC_TIMEOUT_MS = Number(process.env.ACOUSTIC_SERVICE_ARC_TIMEOUT_MS ?? 60_000)
@@ -68,7 +69,12 @@ async function postJson<TIn, TOut>(
   const url = `${base}${path}`
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(ACOUSTIC_SERVICE_TOKEN
+        ? { Authorization: `Bearer ${ACOUSTIC_SERVICE_TOKEN}` }
+        : {}),
+    },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   })
@@ -77,6 +83,159 @@ async function postJson<TIn, TOut>(
     throw new Error(`[acousticService] ${path} -> ${res.status}: ${detail.slice(0, 256)}`)
   }
   return (await res.json()) as TOut
+}
+
+// Journey selection
+
+export type AcousticKnownness = 'known_track' | 'known_artist' | 'unseen'
+export type AcousticJourneyPhase = 'settle' | 'build' | 'sustain' | 'impact' | 'release'
+
+export interface AcousticSkipPenalty {
+  trackId: string
+  weight: number
+  decisionsRemaining: number
+}
+
+export interface AcousticJourneyNextInput {
+  sessionId: string
+  decisionIndex: number
+  currentTrackId: string
+  anchorTrackIds: string[]
+  phase: AcousticJourneyPhase
+  phaseDescription: string
+  familiarityTarget: number
+  knownTrackIds: string[]
+  knownArtists: string[]
+  recentKnownness: AcousticKnownness[]
+  excludeIds: string[]
+  skipPenalties: AcousticSkipPenalty[]
+}
+
+interface AcousticJourneyNextRaw {
+  decision_id: string
+  track: {
+    id: string
+    name: string
+    artist: string
+    album?: string
+    spotify_uri?: string
+    knownness: AcousticKnownness
+  }
+  phase: AcousticJourneyPhase
+  confidence: number
+  transition_distance: number
+  target_distance: number
+  familiarity_fit: number
+  skip_penalty: number
+  relaxation_level: number
+  candidate_count: number
+  latency_ms: number
+}
+
+export interface AcousticJourneyDecision {
+  decisionId: string
+  track: {
+    id: string
+    name: string
+    artist: string
+    album?: string
+    spotifyUri?: string
+    knownness: AcousticKnownness
+  }
+  phase: AcousticJourneyPhase
+  confidence: number
+  transitionDistance: number
+  targetDistance: number
+  familiarityFit: number
+  skipPenalty: number
+  relaxationLevel: number
+  candidateCount: number
+  latencyMs: number
+}
+
+export async function selectJourneyNext(
+  input: AcousticJourneyNextInput,
+): Promise<AcousticJourneyDecision> {
+  const raw = await postJson<Record<string, unknown>, AcousticJourneyNextRaw>(
+    '/journey/next',
+    {
+      session_id: input.sessionId,
+      decision_index: input.decisionIndex,
+      current_track_id: input.currentTrackId,
+      anchor_track_ids: input.anchorTrackIds,
+      phase: input.phase,
+      phase_description: input.phaseDescription,
+      familiarity_target: input.familiarityTarget,
+      known_track_ids: input.knownTrackIds,
+      known_artists: input.knownArtists,
+      recent_knownness: input.recentKnownness,
+      exclude_ids: input.excludeIds,
+      skip_penalties: input.skipPenalties.map((penalty) => ({
+        track_id: penalty.trackId,
+        weight: penalty.weight,
+        decisions_remaining: penalty.decisionsRemaining,
+      })),
+    },
+    ARC_TIMEOUT_MS,
+  )
+
+  return {
+    decisionId: raw.decision_id,
+    track: {
+      id: raw.track.id,
+      name: raw.track.name,
+      artist: raw.track.artist,
+      album: raw.track.album,
+      spotifyUri: raw.track.spotify_uri,
+      knownness: raw.track.knownness,
+    },
+    phase: raw.phase,
+    confidence: raw.confidence,
+    transitionDistance: raw.transition_distance,
+    targetDistance: raw.target_distance,
+    familiarityFit: raw.familiarity_fit,
+    skipPenalty: raw.skip_penalty,
+    relaxationLevel: raw.relaxation_level,
+    candidateCount: raw.candidate_count,
+    latencyMs: raw.latency_ms,
+  }
+}
+
+export interface EnsureJourneyAnchorInput {
+  trackId: string
+  name: string
+  artist: string
+  album?: string
+  spotifyUri?: string
+  durationMs?: number
+}
+
+export async function ensureJourneyAnchor(
+  input: EnsureJourneyAnchorInput,
+): Promise<{ trackId: string; embedded: boolean; created: boolean; audioSource?: string }> {
+  const raw = await postJson<Record<string, unknown>, {
+    track_id: string
+    embedded: boolean
+    created: boolean
+    audio_source?: string
+  }>(
+    '/journey/anchor',
+    {
+      track_id: input.trackId,
+      name: input.name,
+      artist: input.artist,
+      album: input.album,
+      spotify_uri: input.spotifyUri,
+      duration_ms: input.durationMs,
+    },
+    BATCH_TIMEOUT_MS,
+  )
+  return {
+    trackId: raw.track_id,
+    embedded: raw.embedded,
+    created: raw.created,
+    audioSource: raw.audio_source,
+  }
 }
 
 // ─── /embed/text ────────────────────────────────────────────────────────────

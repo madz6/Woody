@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
@@ -35,18 +36,36 @@ const cookieOpts = {
   secure: process.env.NODE_ENV === 'production',
 }
 
+function stateMatches(expected: string | undefined, received: string | null): boolean {
+  if (!expected || !received) return false
+  const expectedBuffer = Buffer.from(expected)
+  const receivedBuffer = Buffer.from(received)
+  return expectedBuffer.length === receivedBuffer.length && timingSafeEqual(expectedBuffer, receivedBuffer)
+}
+
+function clearOAuthState(response: NextResponse): NextResponse {
+  response.cookies.delete('spotify_oauth_state')
+  return response
+}
+
 export async function handleSpotifyOAuthCallback(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = request.nextUrl
   const code = searchParams.get('code')
   const oauthError = searchParams.get('error')
+  const receivedState = searchParams.get('state')
+  const expectedState = request.cookies.get('spotify_oauth_state')?.value
+
+  if (!stateMatches(expectedState, receivedState)) {
+    return clearOAuthState(redirectAuthError(request, 'invalid_state'))
+  }
 
   if (oauthError) {
     const reason = oauthError === 'access_denied' ? 'denied' : 'oauth'
-    return redirectAuthError(request, reason)
+    return clearOAuthState(redirectAuthError(request, reason))
   }
 
   if (!code) {
-    return redirectAuthError(request, 'missing_code')
+    return clearOAuthState(redirectAuthError(request, 'missing_code'))
   }
 
   const clientId = process.env.SPOTIFY_CLIENT_ID?.trim()
@@ -54,7 +73,7 @@ export async function handleSpotifyOAuthCallback(request: NextRequest): Promise<
   const redirectUri = process.env.SPOTIFY_REDIRECT_URI?.trim()
 
   if (!clientId || !clientSecret || !redirectUri) {
-    return redirectAuthError(request, 'misconfigured')
+    return clearOAuthState(redirectAuthError(request, 'misconfigured'))
   }
 
   const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
@@ -86,7 +105,7 @@ export async function handleSpotifyOAuthCallback(request: NextRequest): Promise<
         console.error('[spotify/callback] token exchange failed (non-JSON body)', res.status)
       }
     }
-    return redirectAuthError(request, reason)
+    return clearOAuthState(redirectAuthError(request, reason))
   }
 
   const tokens = (await res.json()) as {
@@ -96,7 +115,7 @@ export async function handleSpotifyOAuthCallback(request: NextRequest): Promise<
   }
 
   if (!tokens.access_token) {
-    return redirectAuthError(request, 'no_access_token')
+    return clearOAuthState(redirectAuthError(request, 'no_access_token'))
   }
 
   const response = redirectTo('/', request)
@@ -111,5 +130,5 @@ export async function handleSpotifyOAuthCallback(request: NextRequest): Promise<
     })
   }
 
-  return response
+  return clearOAuthState(response)
 }

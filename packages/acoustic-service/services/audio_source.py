@@ -15,12 +15,14 @@ from __future__ import annotations
 import asyncio
 import re
 from typing import Optional
-from urllib.parse import quote_plus
+from urllib.parse import urlparse
 
 import httpx
 
 ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
 HTTP_TIMEOUT = 8.0
+MAX_AUDIO_BYTES = 15 * 1024 * 1024
+ALLOWED_AUDIO_HOST_SUFFIXES = (".apple.com", ".mzstatic.com", ".scdn.co")
 
 
 def _normalise(text: str) -> str:
@@ -153,10 +155,27 @@ async def resolve_audio_url(
 
 async def fetch_audio_bytes(client: httpx.AsyncClient, url: str) -> Optional[bytes]:
     """Download an audio file. Returns None on failure (callers handle gracefully)."""
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not any(hostname.endswith(suffix) for suffix in ALLOWED_AUDIO_HOST_SUFFIXES):
+        return None
     try:
-        resp = await client.get(url, timeout=HTTP_TIMEOUT, follow_redirects=True)
-        resp.raise_for_status()
-        return resp.content
+        async with client.stream("GET", url, timeout=HTTP_TIMEOUT, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            final_host = (resp.url.host or "").lower()
+            if not any(final_host.endswith(suffix) for suffix in ALLOWED_AUDIO_HOST_SUFFIXES):
+                return None
+            content_length = int(resp.headers.get("content-length", "0") or "0")
+            if content_length > MAX_AUDIO_BYTES:
+                return None
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > MAX_AUDIO_BYTES:
+                    return None
+                chunks.append(chunk)
+            return b"".join(chunks)
     except (httpx.HTTPError, httpx.TimeoutException):
         return None
 

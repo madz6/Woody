@@ -85,6 +85,7 @@ Add to `.env.local` (Next.js on the host talking to the container):
 
 ```
 ACOUSTIC_SERVICE_URL=http://localhost:8765
+ACOUSTIC_SERVICE_TOKEN=<same value as WOODY_SERVICE_TOKEN>
 ```
 
 ## Deploy to Modal.com
@@ -93,14 +94,28 @@ Modal gives you serverless Python — no server to manage, pay per call.
 
 ```bash
 pip install modal
-modal token new        # one-time auth
+modal token new
+modal volume create woody-corpus
+modal volume put woody-corpus data/woody.db /woody.db
+modal secret create woody-acoustic-service WOODY_SERVICE_TOKEN=<long-random-value>
 modal deploy modal_app.py
 ```
 
 Modal prints your endpoint URL. Add it to `.env.local`:
 ```
 ACOUSTIC_SERVICE_URL=https://<workspace>--woody-acoustic-service-fastapi-app.modal.run
+ACOUSTIC_SERVICE_TOKEN=<same-long-random-value>
 ```
+
+The database is operational data, not source: keep it ignored by Git and upload it separately to the volume. Every endpoint except `/health` requires `Authorization: Bearer <WOODY_SERVICE_TOKEN>`.
+
+### POST `/journey/next`
+
+Selects one track using the anchor/phase CLAP target, current-track coherence, familiarity fit, temporary skip-region penalties, coherence relaxation, and deterministic session tie-breaking. It uses no absent Spotify audio features.
+
+### POST `/journey/anchor`
+
+Resolves an arbitrary Spotify anchor through the preview/iTunes path, embeds it, and upserts it. It returns a visible `422` when audio cannot be resolved.
 
 ## API
 
