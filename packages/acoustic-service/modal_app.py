@@ -60,7 +60,9 @@ image = (
     .add_local_dir("db", "/woody-acoustic/db")
 )
 
-app = modal.App(APP_NAME, image=image, include_source=False)
+# Modal must include this deployment module so its runtime can import
+# `modal_app.fastapi_app`. Runtime application files remain explicitly whitelisted above.
+app = modal.App(APP_NAME, image=image, include_source=True)
 corpus_volume = modal.Volume.from_name("woody-corpus", create_if_missing=True)
 service_secret = modal.Secret.from_name("woody-acoustic-service", required_keys=["WOODY_SERVICE_TOKEN"])
 
