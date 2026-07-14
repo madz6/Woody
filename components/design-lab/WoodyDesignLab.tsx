@@ -3,13 +3,14 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
+import { ProductV2Artifact } from './ProductV2Artifact'
 import { SequenceProductPrototype } from './SequenceProductPrototype'
 import { WoodyObject, type WoodyMaterial, type WoodyMotionState } from './WoodyObject'
 import styles from './WoodyDesignLab.module.css'
 
 type Theme = 'dark' | 'light'
 type ArtTreatment = 'artwork' | 'fragments' | 'colour'
-type LabView = 'product' | 'objects'
+type LabView = 'v2' | 'product' | 'objects'
 
 const MATERIALS: Array<{ id: WoodyMaterial; name: string; character: string; motion: string }> = [
   { id: 'functional', name: 'Sequence', character: 'Function first, still alive', motion: 'Assembles around the journey' },
@@ -44,7 +45,7 @@ export function WoodyDesignLab() {
   const [artTreatment, setArtTreatment] = useState<ArtTreatment>('artwork')
   const [albumIndex, setAlbumIndex] = useState(0)
   const [anchorSheetOpen, setAnchorSheetOpen] = useState(false)
-  const [labView, setLabView] = useState<LabView>('product')
+  const [labView, setLabView] = useState<LabView>('v2')
 
   const activeMaterial = MATERIALS.find((candidate) => candidate.id === material) ?? MATERIALS[0]
   const activeAlbum = ALBUMS[albumIndex]
@@ -61,7 +62,8 @@ export function WoodyDesignLab() {
         <Link href="/" className={styles.wordmark}><span>W</span><strong>WOODY</strong><small>DESIGN LAB / 01</small></Link>
         <div className={styles.labControls}>
           <div className={styles.viewSwitch} aria-label="Prototype view">
-            <button className={labView === 'product' ? styles.activeView : ''} onClick={() => setLabView('product')}>Product UI</button>
+            <button className={labView === 'v2' ? styles.activeView : ''} onClick={() => setLabView('v2')}>Product UI V2</button>
+            <button className={labView === 'product' ? styles.activeView : ''} onClick={() => setLabView('product')}>Product UI V1</button>
             <button className={labView === 'objects' ? styles.activeView : ''} onClick={() => setLabView('objects')}>Object study</button>
           </div>
           <div className={styles.themeSwitch} aria-label="Canvas theme">
@@ -71,7 +73,7 @@ export function WoodyDesignLab() {
         </div>
       </header>
 
-      {labView === 'product' ? <SequenceProductPrototype theme={theme} /> : <>
+      {labView === 'v2' ? <ProductV2Artifact theme={theme} /> : labView === 'product' ? <SequenceProductPrototype theme={theme} /> : <>
         <section className={styles.intro}>
         <span>ONE IDEA · FIVE BEHAVIOURS</span>
         <h1>Not a mascot.<br /><em>A presence.</em></h1>
