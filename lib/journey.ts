@@ -144,7 +144,7 @@ Duration: ${input.durationMinutes} minutes
 Anchors: ${input.anchors.map((anchor) => `${anchor.track.id}: ${anchor.track.name} by ${anchor.track.artist}; user note: ${anchor.note || '(none)'}`).join('\n')}
 Return JSON only: {"phaseDescriptions":{"settle":"...","build":"...","sustain":"...","release":"..."},"anchorTags":[{"trackId":"...","tags":{"function":[],"movement":[],"rhythm":[],"texture":[],"impact":[],"relationship":[]}}]}`
   try {
-    const model = process.env.GEMINI_MODEL?.trim() || 'gemini-2.0-flash'
+    const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite'
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -63,6 +63,8 @@ Set `WOODY_ALLOW_UNAUTHENTICATED=1` only for isolated local acoustic-service wor
 
 Access tokens remain in HTTP-only server cookies. Journey and player routes require a valid Spotify session. The acoustic service requires its shared bearer token on every non-health endpoint.
 
+Gemini is optional and is called once during journey setup to suggest editable phase language and tags. Raw user text, model suggestions, user confirmations, playback behavior, and system inference retain separate provenance. Gemini never supplies measured acoustic facts and never participates in the live next-track score.
+
 ## Validation
 
 ```powershell

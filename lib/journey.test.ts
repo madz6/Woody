@@ -11,7 +11,11 @@ const track: Track = {
   durationMs: 180_000,
 }
 
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
+})
 
 describe('journey setup schema', () => {
   it('accepts one opener and preserves the user note', () => {
@@ -61,5 +65,27 @@ describe('journey fallback plan', () => {
     })
     expect(plan.impactWindows).toHaveLength(2)
     expect(plan.impactWindows.every((window) => window.enabled)).toBe(true)
+  })
+
+  it('uses the current free-tier model and labels AI output as suggested', async () => {
+    vi.stubEnv('GEMINI_API_KEY', 'test-key')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify({
+        phaseDescriptions: { sustain: 'Hold a patient forward line.' },
+        anchorTags: [{ trackId: track.id, tags: { function: ['hold attention'] } }],
+      }) }] } }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const plan = await createJourneyPlan({
+      mode: 'adaptive',
+      intent: 'patient forward motion',
+      durationMinutes: 30,
+      anchors: [{ track, role: 'opener', note: 'keep the line intact' }],
+    })
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/gemini-3.1-flash-lite:generateContent')
+    expect(plan.anchors[0].attribution.some((item) => item.source === 'model_suggested')).toBe(true)
+    expect(plan.anchors[0].confirmedTags).toEqual({})
   })
 })

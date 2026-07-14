@@ -122,7 +122,7 @@ Example:
 [{"reason":"glossy forward momentum","bpm":118,"energy":0.65,"valence":0.55,"key":"9B","textureTags":["glossy","synth-led","bright"]},{"reason":"nocturnal without the weight","bpm":72,"energy":0.35,"valence":0.25,"key":"5A","textureTags":["sparse","sub-heavy","roomy"]}]`
 
 async function callGemini(prompt: string): Promise<string> {
-  const model = 'gemini-2.0-flash'
+  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.1-flash-lite'
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`
 
   const res = await fetch(url, {
