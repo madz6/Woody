@@ -3,7 +3,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import numpy as np
 from fastapi import HTTPException
@@ -12,6 +12,7 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVICE_ROOT))
 
 from routers.journey import (  # noqa: E402
+    EnsureTrackRequest,
     JourneyNextRequest,
     _candidate_exclusions,
     _decision_score,
@@ -19,6 +20,7 @@ from routers.journey import (  # noqa: E402
     _knownness,
     _select_with_relaxation,
     _stable_jitter,
+    ensure_anchor,
     journey_next,
 )
 
@@ -33,11 +35,19 @@ class FakeConnection:
     def fetchone(self):
         return None
 
+    def commit(self):
+        pass
+
 
 class FakeClap:
     def embed_text(self, _text):
         vector = np.zeros(512, dtype=np.float32)
         vector[1] = 1.0
+        return vector
+
+    def embed_audio_from_bytes(self, _audio):
+        vector = np.zeros(512, dtype=np.float32)
+        vector[2] = 1.0
         return vector
 
 
@@ -105,6 +115,30 @@ class SelectorUnitTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as empty_corpus:
                 asyncio.run(journey_next(request()))
             self.assertEqual(empty_corpus.exception.detail, "empty_candidate_pool")
+
+    def test_anchor_uses_spotify_preview_before_metadata_fallback(self):
+        connection = FakeConnection()
+        resolver = AsyncMock(return_value=(b"audio", "https://p.scdn.co/preview.mp3", "preview_url"))
+        request = EnsureTrackRequest(
+            track_id="anchor",
+            name="Track",
+            artist="Artist",
+            preview_url="https://p.scdn.co/preview.mp3",
+        )
+        with (
+            patch("routers.journey.get_db", return_value=connection),
+            patch("routers.journey.init_schema"),
+            patch("routers.journey.load_embedding", return_value=None),
+            patch("routers.journey._resolve_and_fetch", new=resolver),
+            patch("routers.journey.get_clap", return_value=FakeClap()),
+            patch("routers.journey.upsert_track"),
+            patch("routers.journey.store_embedding"),
+        ):
+            result = asyncio.run(ensure_anchor(request))
+
+        self.assertTrue(result.embedded)
+        self.assertEqual(result.audio_source, "preview_url")
+        self.assertEqual(resolver.await_args.args[1], "https://p.scdn.co/preview.mp3")
 
 
 class ServiceAuthenticationTests(unittest.TestCase):

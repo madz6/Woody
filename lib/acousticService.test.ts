@@ -46,4 +46,25 @@ describe('journey acoustic-service contract', () => {
     expect(decision.relaxationLevel).toBe(1)
     expect(decision.track.spotifyUri).toBe('spotify:track:next')
   })
+
+  it('preserves Spotify preview audio when ensuring an anchor', async () => {
+    vi.stubEnv('ACOUSTIC_SERVICE_URL', 'https://acoustic.example')
+    vi.stubEnv('ACOUSTIC_SERVICE_TOKEN', 'service-secret')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      track_id: 'anchor',
+      embedded: true,
+      created: true,
+      audio_source: 'preview_url',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { ensureJourneyAnchor } = await import('./acousticService')
+    await ensureJourneyAnchor({
+      trackId: 'anchor',
+      name: 'Track',
+      artist: 'Artist',
+      previewUrl: 'https://p.scdn.co/example.mp3',
+    })
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String(init.body)).preview_url).toBe('https://p.scdn.co/example.mp3')
+  })
 })

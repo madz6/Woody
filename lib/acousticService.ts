@@ -208,6 +208,7 @@ export interface EnsureJourneyAnchorInput {
   album?: string
   spotifyUri?: string
   durationMs?: number
+  previewUrl?: string
 }
 
 export async function ensureJourneyAnchor(
@@ -227,6 +228,7 @@ export async function ensureJourneyAnchor(
       album: input.album,
       spotify_uri: input.spotifyUri,
       duration_ms: input.durationMs,
+      preview_url: input.previewUrl,
     },
     BATCH_TIMEOUT_MS,
   )

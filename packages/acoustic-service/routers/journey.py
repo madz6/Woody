@@ -75,6 +75,7 @@ class EnsureTrackRequest(BaseModel):
     album: Optional[str] = Field(None, max_length=500)
     spotify_uri: Optional[str] = Field(None, max_length=256)
     duration_ms: Optional[int] = Field(None, ge=0)
+    preview_url: Optional[str] = Field(None, max_length=2048)
 
 
 class EnsureTrackResponse(BaseModel):
@@ -239,7 +240,7 @@ async def ensure_anchor(req: EnsureTrackRequest) -> EnsureTrackResponse:
         if load_embedding(conn, req.track_id) is not None:
             return EnsureTrackResponse(track_id=req.track_id, embedded=True, created=False)
         async with httpx.AsyncClient() as client:
-            audio_bytes, url_used, source = await _resolve_and_fetch(client, None, req.artist, req.name)
+            audio_bytes, url_used, source = await _resolve_and_fetch(client, req.preview_url, req.artist, req.name)
         if not audio_bytes:
             raise HTTPException(status_code=422, detail="anchor_audio_unavailable")
         loop = asyncio.get_running_loop()

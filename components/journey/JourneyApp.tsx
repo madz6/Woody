@@ -298,7 +298,20 @@ export function JourneyApp() {
       setPlan(acceptedPlan)
       if (acceptedPlan.mode === 'adaptive') {
         setStatus('Preparing anchor audio…')
-        await Promise.all(acceptedPlan.anchors.map((anchor) => post('/api/journey/anchor', { track: anchor.track })))
+        for (const anchor of acceptedPlan.anchors) {
+          setStatus(`Listening to ${anchor.track.name}…`)
+          try {
+            await post('/api/journey/anchor', { track: anchor.track })
+          } catch (anchorError) {
+            if (anchorError instanceof ClientApiError && anchorError.message === 'anchor_audio_unavailable') {
+              throw new Error(`Woody could not find usable preview audio for “${anchor.track.name}”. Try another version of this track or choose a different anchor.`)
+            }
+            if (anchorError instanceof ClientApiError && anchorError.message === 'anchor_embedding_timeout') {
+              throw new Error(`Preparing “${anchor.track.name}” took too long. Wait a moment for Woody to wake up, then retry.`)
+            }
+            throw anchorError
+          }
+        }
         const opener = acceptedPlan.anchors.find((anchor) => anchor.role === 'opener')!
         await post('/api/player/play', { uri: opener.track.spotifyUri ?? `spotify:track:${opener.track.id}`, deviceId: activeDevice.id })
       }
