@@ -1,11 +1,13 @@
 'use client'
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import styles from './ProductV2Artifact.module.css'
 
 type V2Screen = 'compose' | 'preview' | 'run' | 'reflect'
 type MotionDriver = 'bass' | 'drums' | 'melody' | 'vocal'
+type RunFeeling = 'carried' | 'friction' | 'interrupted'
+type ShareState = 'idle' | 'preparing' | 'ready' | 'shared' | 'downloaded'
 
 const V2_ALBUMS = [
   { title: 'Forward Motion', artist: 'Mira Vale', image: '/design-lab/album-rush.svg', accent: '#c8f05a', field: '#5b2eff' },
@@ -48,6 +50,63 @@ function WoodySignalMark({ driver, intensity, bpm }: { driver: MotionDriver; int
   )
 }
 
+function escapeXml(value: string) {
+  return value.replace(/[<>&'\"]/g, (character) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[character] ?? character)
+}
+
+async function createRunPrintSvg(album: (typeof V2_ALBUMS)[number], duration: number, driver: MotionDriver) {
+  let artwork = ''
+
+  try {
+    const response = await fetch(album.image)
+    const source = await response.text()
+    const bytes = new TextEncoder().encode(source)
+    let binary = ''
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte) })
+    artwork = `data:image/svg+xml;base64,${btoa(binary)}`
+  } catch {
+    artwork = ''
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+    <rect width="1080" height="1350" fill="${album.field}"/>
+    <circle cx="943" cy="116" r="310" fill="${album.accent}" opacity=".16"/>
+    <path d="M-70 1000C170 840 280 1040 475 750s310 80 675-340" fill="none" stroke="${album.accent}" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="475" cy="750" r="28" fill="${album.accent}"/><circle cx="475" cy="750" r="52" fill="none" stroke="${album.accent}" stroke-width="3" opacity=".65"/>
+    ${artwork ? `<image href="${artwork}" x="72" y="76" width="260" height="260"/>` : `<rect x="72" y="76" width="260" height="260" fill="${album.accent}"/>`}
+    <text x="370" y="118" fill="#f3efe6" opacity=".6" font-family="monospace" font-size="24" letter-spacing="4">WOODY / RUN 0017</text>
+    <text x="370" y="188" fill="#f3efe6" font-family="Arial, sans-serif" font-size="56" font-weight="700">${escapeXml(album.title)}</text>
+    <text x="370" y="236" fill="#f3efe6" opacity=".66" font-family="Arial, sans-serif" font-size="28">${escapeXml(album.artist)}</text>
+    <text x="74" y="510" fill="#f3efe6" font-family="Georgia, serif" font-size="74" font-style="italic">Patient at first.</text>
+    <text x="74" y="590" fill="#f3efe6" font-family="Arial, sans-serif" font-size="74" font-weight="700">Precise when it opens.</text>
+    <text x="74" y="1124" fill="#f3efe6" opacity=".55" font-family="monospace" font-size="22" letter-spacing="3">DURATION</text>
+    <text x="74" y="1198" fill="#f3efe6" font-family="Arial, sans-serif" font-size="68" font-weight="700">${duration} MIN</text>
+    <text x="390" y="1124" fill="#f3efe6" opacity=".55" font-family="monospace" font-size="22" letter-spacing="3">IMPACT</text>
+    <text x="390" y="1198" fill="${album.accent}" font-family="Arial, sans-serif" font-size="68" font-weight="700">24:12</text>
+    <text x="735" y="1124" fill="#f3efe6" opacity=".55" font-family="monospace" font-size="22" letter-spacing="3">MOTION</text>
+    <text x="735" y="1198" fill="#f3efe6" font-family="Arial, sans-serif" font-size="48" font-weight="700">${escapeXml(driver.toUpperCase())}</text>
+    <text x="74" y="1292" fill="#f3efe6" opacity=".7" font-family="monospace" font-size="20" letter-spacing="4">A RUN SHAPED WITH WOODY</text>
+  </svg>`
+}
+
+async function renderRunPrint(album: (typeof V2_ALBUMS)[number], duration: number, driver: MotionDriver) {
+  const svg = await createRunPrintSvg(album, duration, driver)
+  const source = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+
+  try {
+    const image = new Image()
+    image.src = source
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = 1080
+    canvas.height = 1350
+    canvas.getContext('2d')?.drawImage(image, 0, 0)
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not create run print')), 'image/png'))
+  } finally {
+    URL.revokeObjectURL(source)
+  }
+}
+
 export function ProductV2Artifact({ theme }: { theme: 'dark' | 'light' }) {
   const [screen, setScreen] = useState<V2Screen>('compose')
   const [duration, setDuration] = useState(37)
@@ -55,7 +114,50 @@ export function ProductV2Artifact({ theme }: { theme: 'dark' | 'light' }) {
   const [driver, setDriver] = useState<MotionDriver>('bass')
   const [intensity, setIntensity] = useState(.72)
   const [bpm, setBpm] = useState(112)
+  const [runFeeling, setRunFeeling] = useState<RunFeeling>('carried')
+  const [impactConfirmed, setImpactConfirmed] = useState(true)
+  const [wouldReturn, setWouldReturn] = useState(true)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [shareState, setShareState] = useState<ShareState>('idle')
+  const [runPrint, setRunPrint] = useState<Blob | null>(null)
   const activeAlbum = V2_ALBUMS[albumIndex]
+
+  useEffect(() => {
+    if (!shareOpen) return
+    let cancelled = false
+    renderRunPrint(activeAlbum, duration, driver).then((blob) => {
+      if (cancelled) return
+      setRunPrint(blob)
+      setShareState('ready')
+    }).catch(() => {
+      if (!cancelled) setShareState('idle')
+    })
+    return () => { cancelled = true }
+  }, [activeAlbum, driver, duration, shareOpen])
+
+  async function shareRunPrint() {
+    if (!runPrint) return
+    const file = new File([runPrint], 'woody-run-print.png', { type: 'image/png' })
+
+    try {
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'My Woody run', text: 'A run shaped with Woody.' })
+        setShareState('shared')
+        return
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+    }
+
+    const downloadUrl = URL.createObjectURL(runPrint)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = 'woody-run-print.png'
+    link.click()
+    URL.revokeObjectURL(downloadUrl)
+    setShareState('downloaded')
+  }
 
   return (
     <section className={`${styles.artifact} ${styles[theme]}`}>
@@ -143,16 +245,47 @@ export function ProductV2Artifact({ theme }: { theme: 'dark' | 'light' }) {
 
             {screen === 'reflect' && (
               <motion.div key="reflect" className={`${styles.phoneScreen} ${styles.reflectScreen}`} initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -18, opacity: 0 }}>
-                <header className={styles.phoneHeader}><span className={styles.miniMark}>W</span><span>RUN SAVED LOCALLY</span></header>
+                <header className={styles.phoneHeader}><span className={styles.miniMark}>W</span><span>AFTERGLOW · SAVED LOCALLY</span></header>
                 <main className={styles.reflectBody}>
-                  <span className={styles.stepLabel}>REFLECT · 04</span>
-                  <h2>What actually<br /><em>landed?</em></h2>
-                  <section className={styles.ratingBlock}><span>TIMING / SUPPORT</span><div>{[1,2,3,4,5].map((value) => <button key={value} className={value === 4 ? styles.selectedRating : ''}>{value}</button>)}</div></section>
-                  <label className={styles.reflectPrompt}>A moment that worked<textarea placeholder="The turn at around 24 minutes…" /></label>
-                  <label className={styles.reflectPrompt}>Something that broke it<textarea placeholder="A transition, track, or timing issue…" /></label>
-                  <label className={styles.approvalLine}><input type="checkbox" /> I would choose adaptive again</label>
+                  <section className={styles.afterglowHero} style={{ '--print-field': activeAlbum.field, '--print-accent': activeAlbum.accent } as React.CSSProperties}>
+                    <span className={styles.afterglowCover} style={{ backgroundImage: `url(${activeAlbum.image})` }} />
+                    <div className={styles.afterglowTrace}>
+                      <svg viewBox="0 0 260 100" aria-hidden="true"><path d="M2 86C34 73 48 79 68 55s40 17 70-15 49 15 72-7 35-12 48-25" /><circle cx="138" cy="40" r="5" /></svg>
+                      <span>24:12</span>
+                    </div>
+                  </section>
+                  <div className={styles.afterglowTitle}><span>YOUR RUN LEFT A SHAPE</span><h2>Did Woody<br /><em>carry you?</em></h2></div>
+                  <section className={styles.feelingChoices} aria-label="How the run felt">
+                    {([
+                      ['carried', 'Carried me', '↗'],
+                      ['friction', 'Some friction', '≈'],
+                      ['interrupted', 'Got in the way', '×'],
+                    ] as Array<[RunFeeling, string, string]>).map(([value, label, symbol]) => <button key={value} className={runFeeling === value ? styles.selectedFeeling : ''} onClick={() => setRunFeeling(value)}><i>{symbol}</i><span>{label}</span></button>)}
+                  </section>
+                  <section className={styles.evidenceSignals}>
+                    <button className={impactConfirmed ? styles.signalConfirmed : ''} onClick={() => setImpactConfirmed((current) => !current)}><i className={styles.impactSpark}>✦</i><span><small>WOODY NOTICED</small><strong>24:12 felt alive</strong></span><b>{impactConfirmed ? 'KEEP' : 'NO'}</b></button>
+                    <button className={wouldReturn ? styles.signalConfirmed : ''} onClick={() => setWouldReturn((current) => !current)}><i className={styles.returnLoop}>↻</i><span><small>NEXT TIME</small><strong>Take Woody again</strong></span><b>{wouldReturn ? 'YES' : 'NO'}</b></button>
+                  </section>
+                  <button className={styles.noteReveal} onClick={() => setNoteOpen((current) => !current)}><span>{noteOpen ? 'Close note' : 'Leave one trace in your own words'}</span><i>{noteOpen ? '−' : '+'}</i></button>
+                  <AnimatePresence>{noteOpen && <motion.label className={styles.traceNote} initial={{ height: 0, opacity: 0 }} animate={{ height: 76, opacity: 1 }} exit={{ height: 0, opacity: 0 }}><textarea autoFocus placeholder="The turn opened exactly when I needed it…" /></motion.label>}</AnimatePresence>
                 </main>
-                <button className={styles.bottomAction} onClick={() => setScreen('compose')}>Save evidence <i>✓</i></button>
+                <div className={styles.afterglowActions}><button onClick={() => setScreen('compose')}>Done</button><button onClick={() => { setRunPrint(null); setShareState('preparing'); setShareOpen(true) }}>Make a run print <i>↗</i></button></div>
+
+                <AnimatePresence>
+                  {shareOpen && <motion.div className={styles.shareOverlay} initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 27, stiffness: 250 }}>
+                    <header><span>RUN PRINT / 0017</span><button onClick={() => setShareOpen(false)}>×</button></header>
+                    <div className={styles.runPrint} style={{ '--print-field': activeAlbum.field, '--print-accent': activeAlbum.accent } as React.CSSProperties}>
+                      <span className={styles.printCover} style={{ backgroundImage: `url(${activeAlbum.image})` }} />
+                      <div className={styles.printIdentity}><small>WOODY / RUN 0017</small><strong>{activeAlbum.title}</strong><span>{activeAlbum.artist}</span></div>
+                      <p><em>Patient at first.</em><strong>Precise when it opens.</strong></p>
+                      <svg viewBox="0 0 340 150" aria-hidden="true"><path d="M-20 140C45 92 79 138 142 62s89 31 218-70" /><circle cx="142" cy="62" r="7" /><circle cx="142" cy="62" r="14" /></svg>
+                      <div className={styles.printMetrics}><span><small>DURATION</small><strong>{duration} MIN</strong></span><span><small>IMPACT</small><strong>24:12</strong></span><span><small>MOTION</small><strong>{driver}</strong></span></div>
+                      <footer>A RUN SHAPED WITH WOODY</footer>
+                    </div>
+                    <p className={styles.sharePrivacy}>No route, listening history, or private note is included.</p>
+                    <button className={styles.shareButton} disabled={shareState === 'preparing'} onClick={shareRunPrint}>{shareState === 'preparing' ? 'Building your print…' : shareState === 'shared' ? 'Shared' : shareState === 'downloaded' ? 'Saved as PNG' : 'Share or save PNG'}<i>↗</i></button>
+                  </motion.div>}
+                </AnimatePresence>
               </motion.div>
             )}
           </AnimatePresence>
