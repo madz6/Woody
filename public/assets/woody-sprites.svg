@@ -1,0 +1,199 @@
+<svg viewBox="0 0 320 96" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!--
+    Woody character sprite sheet
+    Pixelated human figures — the "World A" accent layer from VISUAL_LANGUAGE.md
+    8 poses at 32×96px each. Pixel grid unit = 4px.
+    Uses: acoustic field overlay, loading states, empty states, DJ artifact
+
+    Poses (left to right):
+    1. Standing — neutral, territory mode
+    2. Arms out — listening / opening
+    3. Reaching up — discovery peak
+    4. Running — high energy arc
+    5. Slow drift — low energy / ambient
+    6. Crouch — deep listening
+    7. Dance step A — high density
+    8. Sacred stillness — high sacred dimension
+  -->
+
+  <!-- ── Shared pixel color palette ── -->
+  <!-- moon:   #f0ede6  (primary figure) -->
+  <!-- teal:   #00e5c4  (energy accent, glow) -->
+  <!-- cobalt: #4455ff  (cold/electric state) -->
+  <!-- amber:  #f0a040  (warm state highlight) -->
+
+  <!-- ═══════════════════════════════════════════════
+       POSE 1 — Standing (x=0, neutral territory)
+       ═══════════════════════════════════════════════ -->
+  <!-- Head -->
+  <rect x="12" y="4"  width="8" height="8" fill="#f0ede6"/>
+  <!-- Neck -->
+  <rect x="14" y="12" width="4" height="3" fill="#f0ede6"/>
+  <!-- Torso -->
+  <rect x="10" y="15" width="12" height="14" fill="#f0ede6"/>
+  <!-- Arms (down, relaxed) -->
+  <rect x="6"  y="16" width="4" height="10" fill="#f0ede6"/>
+  <rect x="22" y="16" width="4" height="10" fill="#f0ede6"/>
+  <!-- Hands -->
+  <rect x="6"  y="26" width="4" height="4" fill="#f0ede6"/>
+  <rect x="22" y="26" width="4" height="4" fill="#f0ede6"/>
+  <!-- Legs -->
+  <rect x="10" y="29" width="5" height="14" fill="#f0ede6"/>
+  <rect x="17" y="29" width="5" height="14" fill="#f0ede6"/>
+  <!-- Feet -->
+  <rect x="8"  y="43" width="7" height="3" fill="#f0ede6"/>
+  <rect x="17" y="43" width="7" height="3" fill="#f0ede6"/>
+
+  <!-- ═══════════════════════════════════════════════
+       POSE 2 — Arms out (listening / open)
+       ═══════════════════════════════════════════════ -->
+  <!-- Head -->
+  <rect x="44" y="4"  width="8" height="8" fill="#f0ede6"/>
+  <!-- Neck -->
+  <rect x="46" y="12" width="4" height="3" fill="#f0ede6"/>
+  <!-- Torso -->
+  <rect x="42" y="15" width="12" height="14" fill="#f0ede6"/>
+  <!-- Arms (out wide) -->
+  <rect x="30" y="18" width="12" height="4" fill="#f0ede6"/>
+  <rect x="54" y="18" width="12" height="4" fill="#f0ede6"/>
+  <!-- Hands -->
+  <rect x="28" y="17" width="4" height="6" fill="#f0ede6"/>
+  <rect x="64" y="17" width="4" height="6" fill="#f0ede6"/>
+  <!-- Legs -->
+  <rect x="42" y="29" width="5" height="14" fill="#f0ede6"/>
+  <rect x="49" y="29" width="5" height="14" fill="#f0ede6"/>
+  <!-- Feet -->
+  <rect x="40" y="43" width="7" height="3" fill="#f0ede6"/>
+  <rect x="49" y="43" width="7" height="3" fill="#f0ede6"/>
+
+  <!-- ═══════════════════════════════════════════════
+       POSE 3 — Reaching up (discovery peak, teal tint)
+       ═══════════════════════════════════════════════ -->
+  <!-- Head -->
+  <rect x="108" y="8"  width="8" height="8" fill="#f0ede6"/>
+  <!-- Neck -->
+  <rect x="110" y="16" width="4" height="3" fill="#f0ede6"/>
+  <!-- Torso (slight lean) -->
+  <rect x="106" y="19" width="12" height="13" fill="#f0ede6"/>
+  <!-- Right arm reaching up -->
+  <rect x="118" y="8"  width="4" height="12" fill="#f0ede6"/>
+  <rect x="118" y="4"  width="4" height="6" fill="#00e5c4"/>  <!-- teal hand = reaching -->
+  <!-- Left arm natural -->
+  <rect x="99"  y="22" width="7" height="4" fill="#f0ede6"/>
+  <!-- Legs -->
+  <rect x="106" y="32" width="5" height="14" fill="#f0ede6"/>
+  <rect x="113" y="32" width="5" height="14" fill="#f0ede6"/>
+  <!-- Feet -->
+  <rect x="104" y="46" width="7" height="3" fill="#f0ede6"/>
+  <rect x="113" y="46" width="7" height="3" fill="#f0ede6"/>
+
+  <!-- ═══════════════════════════════════════════════
+       POSE 4 — Running (high energy arc, amber tint)
+       ═══════════════════════════════════════════════ -->
+  <!-- Head (tilted forward) -->
+  <rect x="142" y="10" width="8" height="8" fill="#f0ede6"/>
+  <!-- Torso (leaned) -->
+  <rect x="138" y="18" width="12" height="12" fill="#f0ede6"/>
+  <!-- Arms (running motion) -->
+  <rect x="128" y="14" width="10" height="4" fill="#f0a040"/>  <!-- amber = high energy -->
+  <rect x="150" y="22" width="10" height="4" fill="#f0a040"/>
+  <!-- Legs (stride) -->
+  <rect x="138" y="30" width="5" height="10" fill="#f0ede6"/>
+  <rect x="144" y="30" width="4" height="6"  fill="#f0ede6"/>
+  <!-- Forward leg -->
+  <rect x="135" y="40" width="8" height="4"  fill="#f0ede6"/>
+  <!-- Back leg -->
+  <rect x="148" y="36" width="4" height="10" fill="#f0ede6"/>
+  <rect x="152" y="44" width="6" height="3"  fill="#f0ede6"/>
+
+  <!-- ═══════════════════════════════════════════════
+       POSE 5 — Slow drift (low energy / ambient)
+       ═══════════════════════════════════════════════ -->
+  <!-- Head (tilted slightly) -->
+  <rect x="172" y="14" width="8" height="8" fill="#f0ede6" opacity="0.85"/>
+  <!-- Neck -->
+  <rect x="174" y="22" width="4" height="3" fill="#f0ede6" opacity="0.85"/>
+  <!-- Torso (relaxed) -->
+  <rect x="170" y="25" width="12" height="13" fill="#f0ede6" opacity="0.85"/>
+  <!-- Arms (hanging low, drifting) -->
+  <rect x="165" y="28" width="5" height="6" fill="#f0ede6" opacity="0.7"/>
+  <rect x="182" y="28" width="5" height="6" fill="#f0ede6" opacity="0.7"/>
+  <!-- Legs (close together, floating feel) -->
+  <rect x="171" y="38" width="4" height="10" fill="#f0ede6" opacity="0.8"/>
+  <rect x="177" y="38" width="4" height="10" fill="#f0ede6" opacity="0.8"/>
+  <!-- Feet (lifted slightly, drift effect) -->
+  <rect x="170" y="48" width="5" height="2" fill="#f0ede6" opacity="0.6"/>
+  <rect x="177" y="50" width="5" height="2" fill="#f0ede6" opacity="0.6"/>
+
+  <!-- ═══════════════════════════════════════════════
+       POSE 6 — Crouch (deep listening, dense state)
+       ═══════════════════════════════════════════════ -->
+  <!-- Head (lower, leaning in) -->
+  <rect x="204" y="20" width="8" height="8" fill="#f0ede6"/>
+  <!-- Torso (compressed) -->
+  <rect x="200" y="28" width="12" height="10" fill="#f0ede6"/>
+  <!-- Arms (on knees) -->
+  <rect x="194" y="30" width="6" height="4" fill="#f0ede6"/>
+  <rect x="212" y="30" width="6" height="4" fill="#f0ede6"/>
+  <!-- Hands on surface -->
+  <rect x="192" y="34" width="6" height="4" fill="#f0ede6"/>
+  <rect x="214" y="34" width="6" height="4" fill="#f0ede6"/>
+  <!-- Legs (crouched) -->
+  <rect x="200" y="38" width="5" height="7" fill="#f0ede6"/>
+  <rect x="207" y="38" width="5" height="7" fill="#f0ede6"/>
+  <!-- Feet (flat) -->
+  <rect x="197" y="44" width="9" height="4" fill="#f0ede6"/>
+  <rect x="207" y="44" width="9" height="4" fill="#f0ede6"/>
+
+  <!-- ═══════════════════════════════════════════════
+       POSE 7 — Dance step A (high density, cobalt tint)
+       ═══════════════════════════════════════════════ -->
+  <!-- Head -->
+  <rect x="238" y="6" width="8" height="8" fill="#f0ede6"/>
+  <!-- Neck -->
+  <rect x="240" y="14" width="4" height="3" fill="#f0ede6"/>
+  <!-- Torso -->
+  <rect x="236" y="17" width="12" height="13" fill="#f0ede6"/>
+  <!-- Arms (up and out, energy) -->
+  <rect x="226" y="12" width="10" height="4" fill="#4455ff"/>  <!-- cobalt = electric state -->
+  <rect x="248" y="10" width="10" height="4" fill="#4455ff"/>
+  <!-- Hands (raised) -->
+  <rect x="223" y="8"  width="5" height="6" fill="#4455ff"/>
+  <rect x="256" y="6"  width="5" height="6" fill="#4455ff"/>
+  <!-- Legs (step) -->
+  <rect x="236" y="30" width="5" height="12" fill="#f0ede6"/>
+  <rect x="243" y="32" width="5" height="10" fill="#f0ede6"/>
+  <!-- Step foot out -->
+  <rect x="234" y="42" width="9" height="4" fill="#f0ede6"/>
+  <rect x="243" y="40" width="7" height="3" fill="#f0ede6"/>
+
+  <!-- ═══════════════════════════════════════════════
+       POSE 8 — Sacred stillness (high sacred dim, radiate)
+       ═══════════════════════════════════════════════ -->
+  <!-- Radiance rings — expanding outward from center -->
+  <circle cx="300" cy="30" r="28" stroke="#f0ede6" stroke-width="0.5" opacity="0.06"/>
+  <circle cx="300" cy="30" r="20" stroke="#f0ede6" stroke-width="0.5" opacity="0.10"/>
+  <circle cx="300" cy="30" r="14" stroke="#00e5c4" stroke-width="0.5" opacity="0.18"/>
+
+  <!-- Head (centered, still) -->
+  <rect x="296" y="8" width="8" height="8" fill="#f0ede6"/>
+  <!-- Neck -->
+  <rect x="298" y="16" width="4" height="3" fill="#f0ede6"/>
+  <!-- Torso (upright, still) -->
+  <rect x="294" y="19" width="12" height="14" fill="#f0ede6"/>
+  <!-- Arms (slightly out and down, palms open) -->
+  <rect x="284" y="24" width="10" height="3" fill="#f0ede6" opacity="0.9"/>
+  <rect x="306" y="24" width="10" height="3" fill="#f0ede6" opacity="0.9"/>
+  <!-- Hands open -->
+  <rect x="282" y="22" width="4" height="7" fill="#f0ede6" opacity="0.8"/>
+  <rect x="314" y="22" width="4" height="7" fill="#f0ede6" opacity="0.8"/>
+  <!-- Legs (together, grounded) -->
+  <rect x="295" y="33" width="5" height="15" fill="#f0ede6"/>
+  <rect x="302" y="33" width="5" height="15" fill="#f0ede6"/>
+  <!-- Feet (planted) -->
+  <rect x="292" y="48" width="8" height="3" fill="#f0ede6"/>
+  <rect x="302" y="48" width="8" height="3" fill="#f0ede6"/>
+
+  <!-- Teal center glow dot — sacred point -->
+  <circle cx="300" cy="26" r="3" fill="#00e5c4" opacity="0.6"/>
+</svg>

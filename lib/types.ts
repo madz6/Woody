@@ -91,6 +91,10 @@ export interface AcousticFeatureVector {
 /**
  * Acoustic target derived from PersonaLens for scoring candidates.
  * The acoustic service scores each track against this target.
+ *
+ * @deprecated Use CLAPEmbedding for navigation. AcousticTarget is the legacy
+ * 4-dim proxy and is retained only for the existing /api/intent + globe path.
+ * Arc generation never reads this — it operates in 512D CLAP space.
  */
 export interface AcousticTarget {
   energy?: number        // 0-1 from lens.energy
@@ -200,4 +204,67 @@ export interface LearnedIntentBias {
   avgBpm?: number
   dominantTones?: TrackSuggestion['tone'][]
   excludeTrackIds: string[]
+}
+
+// ─── CLAP arc engine types (WOODY_BUILD_SPEC.md Sections 3-5) ───────────────
+
+/** 512-dimensional L2-normalised float array from laion/larger_clap_music_and_speech.
+ *  This is the PRIMARY NAVIGATION REPRESENTATION. All arc / k-NN / cold-start
+ *  math operates on these vectors. The 5D coords below are display only. */
+export type CLAPEmbedding = number[]
+
+/** 5D perceptual projection — display only. Never used as a navigation target. */
+export interface AcousticCoords5D {
+  energy: number
+  warmth: number
+  density: number
+  organicity: number
+  sacred: number
+}
+
+export type ArcShape = 'journey' | 'plateau' | 'discharge' | 'peak_early'
+
+/** Single step in a generated arc. */
+export interface ArcStep {
+  id: string
+  positionInArc: number
+  progress: number
+  transitionDistance: number
+  distanceToTarget: number
+  isFrissonCandidate: boolean
+  waypointDistance: number
+  /** 0 = tight coherence; 1-2 = relaxed; 3 = unbounded fallback. */
+  relaxationLevel: number
+}
+
+/** Arc generation response from POST /api/arc. */
+export interface ArcResult {
+  steps: ArcStep[]
+  arcShape: ArcShape
+  reachedTarget: boolean
+  finalDistance: number
+  coherenceViolations: number
+  poolSizeUsed: number
+  /** Optional per-step track metadata attached by the Next.js route. */
+  trackMap?: Record<string, Track>
+  /** Diagnostics for the listen-test failure-mode triage. Not user-facing. */
+  diagnostics?: Record<string, unknown>
+  latencyMs?: number
+}
+
+/** Input to /embed/audio/batch through the AcousticServiceClient. */
+export interface EmbedAudioBatchInput {
+  id: string
+  previewUrl?: string
+  artist?: string
+  title?: string
+}
+
+/** Result of /embed/audio/batch through the AcousticServiceClient. */
+export interface EmbedAudioBatchResult {
+  id: string
+  embedding?: CLAPEmbedding
+  audioUrlUsed?: string
+  audioSource?: 'preview_url' | 'itunes'
+  error?: string
 }

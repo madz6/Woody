@@ -1,7 +1,159 @@
 # Woody — Session Notes
 *Running capture of all product discussions, decisions, ideas, and sentiment.*
-*Last updated: 2026-05-06*
+*Last updated: 2026-07-14*
 *Maintained by the woody-session-capture skill. Do not manually reorganise — append only.*
+
+---
+
+## [PRODUCT][WEDGE][CONVERGENCE] — 2026-07-01 (The Run — first concrete wedge)
+
+**What happened:** Long product-brainstorm converged (finally) on a first concrete, bounded product. Reframing journey: three "jobs" (functional/identity/delight) collapsed by founder into ONE — *understand me + serve what I'm unknowingly anticipating, effortlessly* — where "effortless" = the UX/how, "delight/how-did-it-know" = the *receipt/proof*. Then: the balance of familiar↔surprise is set by **purpose**, and purpose is "the input you don't have." Founder's cut (sharper than "pick one room"): target **low-control activity contexts** — gym, run, drive, clean, work — because (a) pain is maximal where agency is minimal (hands busy, can't curate → system must take the wheel), and (b) the activity IS the purpose and it's **sensable** (accelerometer/pace/HR/time), which frictionlessly solves the purpose-input crux. First build chosen: **THE RUN.**
+
+**"Woody for the run" — the definition (from tonight's framework):**
+- **Purpose = the run, sensed for free** (pace/cadence, HR if watch). Solves purpose-input.
+- **Shape is real & semi-objective** — ease-in → build → push/peak → cool-down. (This is where the shelved arc-shapes finally earn their keep; they were wrong for open-ended "coffee shop," right for an activity with a shape.)
+- **Balance = mostly flow (hold cadence) + timed surprise lifts** (a surprising-but-right banger at the hill / last km). Ratio set by purpose.
+- **Effortless by necessity** — can't skip mid-run, so the system dictates.
+- **Feedback (sparse-signal adaptation):** physiology-DURING (held/raised pace = it worked) + retrospective keep AFTER (the track that hit gets saved). Not mid-run taps.
+- **Success / "how did it know":** you pushed harder or held pace because the music hit right, and/or one track dropped at the perfect moment and you saved it after.
+
+**Honest warning (don't rebuild a corpse):** cadence-matched running music is a **solved commodity** (RockMyRun; Spotify built a running feature and killed it). If it's just "BPM matches steps," it's the graveyard. The wedge is the layer ON TOP — taste + surprising-but-right lift + learning you.
+
+**Thinnest first test (grown-not-designed; better than the coffee-shop gate):** generate a run arc with the **existing** engine (energetic intent, peak/build shape, founder taste, excludes) and **go run to it.** No sensor integration yet. Question: does a purpose-shaped, surprise-balanced arc actually *carry* a run? Did a track hit at the right moment? Legs as the sensor. This is the real, concrete gate_listen v2 — purposeful, with an objective success criterion.
+
+**Sentiment:** First genuine convergence of the whole session. Founder went from "I don't see the use case" earlier → "I wish I had a system for it" → committing to the run. Founder-market-fit surfaced organically.
+
+**Category:** Product | Wedge | Convergence
+
+---
+
+## [ARCHITECTURE][ENGINE][DIRECTION] — 2026-07-01 (Fascia / living-substrate reframe)
+
+**What happened:** Long architectural working session (in chat), sparked by founder's "the engine is ass in execution, not just principle" + "think fascia, not tools." Founder pushed past the current CLAP-nearest-neighbour engine to a root-level vision. Genuinely important — captured so it isn't lost.
+
+**Key insights (directional, NOT yet built):**
+
+1. **Trajectory is the primary signal, not the track.** Unit = the transition. A user's sequence of deliberate next-choices traces a vector toward a latent attractor, often unnameable (founder drifted afrobeats → UK drill/grime and was really converging on *afroswing* — the blend, a point *between* genre labels). Frictionless: every "more like this" tap is a step in a path; read the direction, extrapolate. Movement beats words.
+
+2. **Description is subjective; the acoustic space is invariant.** Two people describe the same music in totally different words but point at the same coordinate. Words (genre/mood/free-text intent) are lossy personal pointers; the coordinate is shared ground truth → strongest case yet for continuous-space over tags, and why track→track (language-free) is a cleaner signal than text intent.
+
+3. **Session dynamics: seek → hold.** Trajectory converges on a "baseline region"; job flips from extrapolate-direction to hold-the-zone (don't break the vibe). Arrival = the vector → ~0 (choices cluster tight). Recurring baselines across sessions = the user's territory.
+
+4. **Coherence floor / surprise ceiling.** Value = coherence (hold zone) PLUS surprising-but-right bridges. Bridge mechanism = *far overall, near on ONE element* (a shared thread — e.g. an instrumental texture linking UK rap → 00s R&B). Whole-song CLAP can't do this (it blends everything); needs element-level decomposition. Huron: expectation set → violated → resolved = the dopamine. Trajectory grades surprises (user follows = landed; bounces back = jarred).
+
+5. **Why the current engine feels dead (root diagnosis):** CLAP is a *frozen, pretrained* space — no feedback, no adaptation. Nearest-neighbour on a frozen space gravitates to the vibe *prototype* (why it served the cliché "Stay With Me"). Compounded by a mainstream-by-construction corpus (Spotify genre-search seeds), 30s-preview embeddings (unrepresentative fragment), and greedy drift to the centroid. Adding more tools (MERT/stems/camelot) = adding bones, not the missing living tissue.
+
+6. **The fascia = the root architecture.** ONE *plastic* latent space everything projects into (tracks, user-as-moving-point, intent-as-direction, session-as-path, good-transition-as-edge), whose **metric is LEARNED from behavioural trajectories, not fixed CLAP cosine.** The space tightens where use pulls it (fascia strengthens under load); one signal propagates globally (a drift sharpens the user's region + reinforces the bridge for neighbours + updates attribution — simultaneously). Tools (CLAP/Essentia/MERT/camelot/stems) are *sensory organs* feeding the space; the living metric learns how much to trust each per context. (Docs had "Phase-3 learned contrastive metric" as an add-on; the reframe makes it the CORE living tissue.)
+
+7. **Grown, not designed.** A living system can't be spec'd and shipped — day one, no usage, it's just frozen CLAP. Build = the thinnest organism with a feedback loop that *reshapes its own space*, put under load (even just the founder) to grow. Same truth as "you can't design a feedback loop before running it," at the architecture level.
+
+8. **Domain-general:** a plastic latent model of a person via their trajectory, reshaped by feedback, IS the "underlying system that connects to everything" the founder keeps circling. Music = the first *body* to grow it in. Reconciles the general-system pull with the discipline (grow in one body first).
+
+**Architectural decisions reopened:**
+- **CLAP-as-locked-navigation-backbone is REOPENED** (was locked in WOODY_BUILD_SPEC / woody-engine.mdc / REVISIT Decisions Made). Likely split: CLAP for text-intent→region; music-features + learned metric for track→track and transitions. `lib/camelot.ts` (harmonic/tempo mixing) = cheap high-leverage first augmentation.
+- Pre-baked arc *shapes* (journey/plateau/discharge/peak_early) questioned as possible theatre; a **real-time next-track engine** (current position + recent trajectory → next) matches how the founder actually listens better than a pre-planned 18-track arc.
+
+**Status:** Directional, not built. Biggest architectural shift since CLAP was adopted. Needs a design pass before building — and must stay honest to "grown, not designed" (ship the loop, grow under load) rather than becoming another big up-front spec.
+
+**Sentiment:** Founder (rightly) frustrated that prior answers defended the existing architecture instead of attacking the root. This entry exists so the reframe survives.
+
+**Category:** Architecture | Engine | Direction
+
+---
+
+## [VALIDATION][ENGINE][STAGE-1] — 2026-07-01
+
+**What happened:**
+gate_listen ran (via Cursor) on a 55-track generic corpus, arc-length 14. Automated A–E triage PASSED (level-0 69%, level-1 31%, level-2/3 0%; mean transition 0.302; 31 frisson hits; no identical arcs). Founder did a partial human listen on the "afternoon coffee shop work" journey arc.
+
+**Founder verdict (partial listen):**
+Coherent movement that matched intent — "afternoon coffee, slightly shifting": Gentleman as buildup → Stay With Me (Mayonaka no Door) as a comfy zone. BUT: felt "auto chosen, not personalised"; annoyed it surfaced an overplayed track (Stay With Me) and a bland solo-piano landing.
+
+**Read (decided):**
+- **Engine layer = GREEN.** Coherent, intent-matching journey from a generic pool with zero personalization = the hardest technical question answered positively, by ear.
+- **Product moment (discovery / "song I didn't know I was looking for") = NOT YET TESTED.** The dissatisfaction ("not mine", overplayed) is the *absence* of personal pool + cold-start, which were never in this test — not an engine failure.
+- **Stage 1 = partial pass.** Engine coherence proven; discovery moment still to test.
+
+**Key correction (important):** the tempting next step — seed the pool from the founder's own Spotify library — would make discovery impossible (arc can only pick tracks already owned). That tests *curation* (DJ-arc value), not *discovery* (§1 primary moment). They are two different products; the founder bumped into the fork by feel.
+
+**Decided next test ("founder listen" v2 — tests BOTH values at once):**
+1. Seed a big, diverse **external** corpus (500, full run — NOT the library).
+2. Add `exclude_ids` (drop overplayed tracks like Stay With Me `4J2oDU9oacz7lJ7H8A8P8v`).
+3. Set a real `current_position` (a recently-played track, not pool-order default).
+4. One journey arc for a real intent; listen while working.
+Gate: (a) did an *unknown* track show up and feel right → discovery/CLAP-only works; (b) did it hold as a session → curation/DJ-arc works.
+
+**Implementation note:** arc API already supports `exclude_ids` + `current_position`; `test_arc.py` doesn't expose them (~15-line change: add `--exclude`, `--start-track`). Assigned to whoever the founder routes it to (Claude here or Cursor) — avoid two agents editing test_arc.py simultaneously.
+
+**Caveat:** 55-track pool is below the trustworthy threshold; seed 500 before over-reading anything, including subjective feel.
+
+**Category:** Validation | Engine | Stage 1
+
+---
+
+## [PRODUCT][STRATEGY][COLD-START] — 2026-06-27
+
+**What was discussed:**
+Picked up the biographical cold-start design question, then zoomed out to the existential business questions (is it valuable, who wants it, willingness to pay, monetisation) at the founder's request. Research-backed devil's-advocate audit run.
+
+**Key decisions / outputs:**
+
+1. **Biographical cold start design RESOLVED** → BIOGRAPHICAL_COLD_START.md. The track-picking-vs-open-ended binary is false: cultural/social dimensions are **provenance metadata on tracks**, not separate inputs. Anchor = `(track, source, era)`. Three questions pull channels (inherited / belonging / self), not favourites. Multicultural depth = inherited–self CLAP spread + optional 2nd inherited anchor; **no free-text biography**. Weighting: formative = terrain (no decay, defines basin), recent = weather (fast decay, sculpts within). Inherited anchors weight a distinct familiarity/comfort axis. Anchors **seed** the probe; behaviour **validates** — one unified cold-start flow. Three sub-decisions left open for founder call (self-vs-inherited weighting, era asked-vs-inferred, missing-channel handling).
+
+2. **Strategic audit RESOLVED (directionally)** → STRATEGIC_AUDIT.md. Position as **identity + discovery layer (Letterboxd model)**, NOT "the acoustic DNA company." Research: Pandora Music Genome (450 hand-labelled attrs → SiriusXM radio co, $3.5B) and The Echo Nest (computer acoustic analysis → Spotify ~$100M → became Audio Features API → **deprecated Nov 2024**) both prove acoustic DNA becomes *infrastructure*, not a consumer self-knowledge product. Pure taste-stats tools price at ~$6/yr (stats.fm) — commodity grave; Letterboxd earns ~$19–49/yr (~30M users, Tiny acquired 60% at ~$50–60M) via identity + social lock-in. Superfan TAM (~$4.5B, Luminate 19%/+80%) is artist-directed spend, NOT taste-tool spend — don't bank on it. Believable early market = music nerds + DJs. First real dollar = **DJ/creator pro tier**. Real moat = accumulated territory + social graph, not the pipeline.
+
+3. **Sequencing decision (resolves founder overwhelm):** stop answering "is it a business" and "how do I build it all" simultaneously. Cheapest-risk-first: **gate_listen this week** (hand-run one arc on own library; does the core moment land for one non-founder?). It gates every other question including "is it valuable." Do NOT build pipeline / knowledge graph / on-device models / monetisation until the moment is proven. Then turn musical-biography onboarding into the shareable artifact and test stranger-curiosity. Defer monetisation deliberately.
+
+**Status:** Cold-start design resolved (3 sub-decisions open). Strategic direction set. gate_listen remains the #1 blocking action.
+
+**Sentiment:** Founder expressed genuine uncertainty/overwhelm about value, monetisation, and market. Audit aimed to reduce confusion by sequencing, not add more open questions. Honest about the graveyard precedent while preserving the real, differentiated path.
+
+**Category:** Product | Strategy | Cold-Start | Business
+
+**Target docs updated:** BIOGRAPHICAL_COLD_START.md (created), STRATEGIC_AUDIT.md (created), REVISIT.md (updated), SESSION_NOTES.md (this entry)
+
+**Action needed:**
+- gate_listen — still the #1 action, now also the gate on the business case
+- Founder call on the 3 open cold-start sub-decisions
+- After gate_listen passes: prototype musical-biography onboarding as shareable artifact
+
+---
+
+## [PRODUCT][ARCHITECTURE] — 2026-06-23
+
+**What was discussed:**
+Major session covering biographical cold start, minimum property set validation, behavioural attribution without friction, CONTEXT_SNAPSHOT.md revamp, GPU cost strategy, immediate value / traction.
+
+**Key decisions:**
+
+1. **Biographical cold start is a separate architecture item from acoustic cold start.** The Bayesian probe gives acoustic priors. Formative listening history, cultural background, parental influence, friend group exposure give biographical priors that acoustic data can never recover. Both are required. The personal model needs to weight formative anchors differently from recent signals.
+
+2. **Primary interaction reframed: "Explore. Understand. Own."** Not just "Explore" — that undersells it. The three verbs are a progressive arc: explore territory, understand what you find, own it as identity. This differentiates Woody from a better discovery playlist.
+
+3. **Minimum property set confirmed by research:** tempo/rhythm (Essentia), mode/harmony (madmom + Essentia), melodic contour (Basic Pitch → MIDI), timbral character (Essentia per stem, needs Demucs), dynamic envelope (Essentia/librosa). Five properties from BRECVEMA framework (Juslin & Västfjäll 2008) and Zentner/Eerola work. Research-validated, not gut choice.
+
+4. **Behavioural attribution: zero friction during playback.** Passive signals always on (replay timestamps, skip timing, section-specific behaviour). Optional moment-level tap (marks a moment, no popup). Post-session pattern surfacing only when patterns are clear and repeated. Manual annotation as pull, not push. Pattern-triggered questions sparingly (4+ occurrences before asking).
+
+5. **Disruption HOW added to CONTEXT_SNAPSHOT:** (1) upstream of emotion not downstream, (2) understanding alongside discovery not instead of it, (3) first-person taste artefact owned by user, (4) platform-agnostic intelligence, (5) biographical + behavioural model that is yours not a population average.
+
+6. **GPU strategy: Modal free tier for corpus build, one-time per track.** Analysis stored forever after ingestion. Marginal cost per new track collapses. No ongoing GPU spend required.
+
+7. **CONTEXT_SNAPSHOT.md fully revamped** with corrected founding insight (past experience + current state + emotion as validating signal, not just acoustic properties), who it's for with user-sensitive dial note, corrected interaction verbs, disruption HOW section, and product-level hard stops added.
+
+**Reading material confirmed for user:** Levitin "This Is Your Brain on Music" → Huron "Sweet Anticipation" → DeNora "Music in Everyday Life" → Gioia "Music: A Subversive History" → Juslin & Västfjäll 2008 BRECVEMA paper.
+
+**Status:** Session completed. REVISIT.md updated with biographical cold start as new critical item.
+
+**Sentiment:** High-clarity session. User's biographical insight is genuinely important — reframes cold start problem entirely.
+
+**Category:** Product | Architecture | Research
+
+**Target docs updated:** CONTEXT_SNAPSHOT.md, REVISIT.md, SESSION_NOTES.md
+
+**Action needed:** 
+- gate_listen still PENDING — listen test must happen before UI work
+- Biographical cold start needs design session
+- Behavioural attribution data model needs a session
 
 ---
 
@@ -740,3 +892,121 @@ The visualization wedge works only if it's genuinely unprecedented visually AND 
 
 *End of 2026-05-05 session notes.*
 *Next session: update PRD with all Decided items above. Priority: cold start strategy, personal model architecture, audio pipeline spec, arc quality validation, visualization pain-solver requirement.*
+
+---
+
+## [ENGINE] [ARCH] — 2026-05-13 (CLAP as Navigation Backbone — Architecture Overhaul)
+
+**What was discussed:**
+Deep research session on mathematical representation for acoustic navigation. Evaluated CLAP, MERT, JEPA, sqlite-vec, and the validity of the existing 5D linear formula from Spotify Audio Features.
+
+**User's position:**
+"these math stuff are way too simplistic and not representative of human nature" — pushed back hard on the original 5D linear formula used for navigation. Asked for genuine deep research, not surface-level recommendations.
+
+**Claude's position and decisions made:**
+
+1. **CLAP replaces 5D formula as the navigation space.** laion/larger_clap_music_and_speech produces 512-dim shared audio+text embeddings. Text "late night drive" and matching audio are near each other in this space. This is the correct navigation backbone — not because it's fashionable, but because it directly solves the alignment problem: intent expressed in language and audio both live in the same metric space.
+
+2. **Spotify valence is unreliable.** Research confirmed r=0.67 correlation with human perception. The 5D linear formula (warmth = valence×0.6 + acousticness×0.4) compounds noise from an already-noisy source. This is a fundamental flaw, not a tuning problem.
+
+3. **The 4-layer architecture is revised:** Layer 2 is now CLAP (512D), not MERT. MERT remains relevant for fine-grained audio understanding tasks but CLAP is the right embedding for navigation because it's multimodal — text and audio share the same space. Revised layers:
+   - Layer 0: Raw audio
+   - Layer 1: Essentia signal features (~400D)
+   - Layer 2: CLAP embeddings 512D [PRIMARY NAVIGATION LAYER]
+   - Layer 3: 5D perceptual projection [DISPLAY ONLY — lossy]
+
+4. **5D coordinates are display-only.** The 5D formula is retained as a Phase 1 heuristic for the visual field renderer and user-facing coordinate display. Navigation, arc generation, and k-NN search all operate in 512D CLAP space using cosine similarity. This is a hard architectural separation.
+
+5. **sqlite-vec is the Phase 1 vector store.** v0.1.0 stable (2024). Zero infrastructure overhead. Virtual table vec0 for cosine similarity. Same schema as pgvector — swap driver when scaling.
+
+6. **Bayesian probe confirmed as primary cold start.** 8 probe tracks spanning CLAP space. Behavioral responses (replay=3.0, save=4.0, listen_through=1.0, skip_late=-0.5, skip_early=-1.5, skip_immediate=-2.5) update territory centroid via weighted average. Supersedes Spotify history as primary cold start signal.
+
+7. **Beam search in CLAP space.** Coherence constraint: cosine distance < 0.35 between consecutive tracks. Relaxation schedule: 1.0x → 1.5x → 2.0x → unlimited. Frisson targets: 30%, 65%, 85% of arc progress (±0.06).
+
+8. **PersonaLens retained for search queries only.** LLM-generated Spotify search seeds (artist names, genres) remain useful for populating the track pool. But acoustic target computation (what the arc is navigating toward) is CLAP text embedding, not LLM 5D output.
+
+9. **Arc shapes formalised:** journey (linear A→B), plateau (reach target fast, hold), discharge (start congruent, move later — for emotional processing), peak_early (BRAC-aligned, peak at ~40% then descend — for workouts). Shape inferred from intent text signals.
+
+10. **Skip taxonomy formalised:** <15% playtime = acoustic mismatch (attribution needed per dimension), 15-70% = moderate engagement, >70% = transition signal (NOT rejection — this is a psychology law from PSYCHOLOGY.md).
+
+**Deliverable created:** `WOODY_BUILD_SPEC.md` — complete technical build specification (~600 lines) covering all of the above in Cursor-executable detail. This is the canonical engineering reference for Phase 1 build.
+
+**Status:** Decided — architecture is locked for Phase 1
+
+**Sentiment:** Aligned after correction — user pushed back correctly on oversimplification, research validated the concern and produced a materially better architecture
+
+**Category:** Engine | Architecture | Audio Pipeline
+
+**Target doc:** WOODY_BUILD_SPEC.md (created this session), .cursor/rules/woody-engine.mdc (updated this session), MASTER_BUILD_PROMPT.md Section 6 (needs annotation)
+
+**Action needed:**
+- Cursor: execute 8-step build sequence in WOODY_BUILD_SPEC.md Section 13
+- packages/acoustic-service/: scaffold FastAPI service with CLAPService class
+- lib/acousticService.ts: client for acoustic service
+- app/api/arc/route.ts: new arc endpoint using CLAP navigation
+- lib/arcShape.ts: intent text → arc shape inference
+
+---
+
+## [ENGINE] [ARCH] — 2026-05-13 (Distance Metric Evolution)
+
+**What was discussed:**
+Phase-gated distance metric evolution for the navigation engine.
+
+**Decision:**
+- Phase 1: Cosine similarity in CLAP 512D space (simple, fast, correct)
+- Phase 2: Mahalanobis distance (accounts for correlated CLAP dimensions — some dimensions co-vary)
+- Phase 3: Learned contrastive metric from behavioral data (trained on skip/replay/completion signals)
+
+**Status:** Decided
+
+**Category:** Engine | Architecture
+
+**Target doc:** WOODY_BUILD_SPEC.md Section 9
+
+**Action needed:** None for Phase 1. Flag for Phase 2 planning.
+
+---
+
+## [ENGINE] — 2026-05-13 (5D Calibration Path)
+
+**What was discussed:**
+How to calibrate the 5D display projection from CLAP embeddings.
+
+**Decision:**
+- Phase 1: Heuristic Python formula from Spotify Audio Features (retained from MASTER_BUILD_PROMPT.md Section 2 — display only)
+- Phase 2: Linear probe (Ridge regression, 500 annotated tracks, Bradley-Terry pairwise comparison). Output: 5×512 weight matrix projecting CLAP → 5D. This is the correct path for display accuracy once track corpus is large enough to annotate.
+
+**Status:** Decided — Phase 1 heuristic is acceptable, Phase 2 is the upgrade path
+
+**Category:** Engine | Calibration
+
+**Target doc:** WOODY_BUILD_SPEC.md Section 8
+
+**Action needed:** None for Phase 1. Annotation workflow to be designed for Phase 2.
+
+---
+
+## [PRODUCT][EVIDENCE][WORKFLOW] — 2026-07-14 (Adaptive journeys + two synchronized streams)
+
+**What happened:** The codebase/documentation audit was combined with the later reactive-running discussion. Founder confirmed a desire to build the underlying system rather than only run manual validation, and challenged the false choice between validation and technical progress. A spontaneous non-founder problem signal also appeared: a friend described pre-planning an entire music queue for motorbike rides to avoid skipping, intentionally aligning songs with route shape, estimated speed, turns, and moments so the ride feels fun and timed.
+
+**Interpretation:** The friend account is meaningful evidence of the **problem**, especially outside running: low-control journeys create preparation and interaction costs that a normal playlist does not always remove. It is not yet evidence that the friend wants an adaptive system; no solution was proposed or tested. Follow up without pitching first.
+
+**Product direction:** Running remains the first laboratory because the founder can test frequently. It is not Woody's permanent definition. The shared category is **adaptive music for low-control journeys**. The primary moment is now: *the next track arrives at the right moment without the listener having to manage it.* Discovery and understanding remain important receipts, but are not the only gate.
+
+**Workflow decision:** Run two streams simultaneously:
+1. **Experience/evidence:** founder sessions, matched static-playlist comparisons, non-leading interviews, and post-session transition review.
+2. **System/learning loop:** a generic journey-session model, one-next-track selection from the embedded corpus, Spotify playback, and persisted transition events.
+
+The streams are coupled: system work may be at most one experiment ahead of evidence. This permits real building without returning to architecture-first drift.
+
+**UX decision:** Lift / Hold / Release may be used during safe founder sessions as temporary instrumentation that labels desired direction. It is not the intended final interaction. Motorbike/riding experiences must be zero-touch during the ride; candidate signals include route shape, speed, progress, turns, prior behavior, and post-ride judgment.
+
+**Technical direction:** Build one generic next-track primitive, conceptually `POST /api/journey/next`, rather than separate run/riding engines or a pre-planned fixed arc. Inputs combine listener, journey, current track, recent trajectory, requested/inferred direction, exclusions, and session history. Every decision must create a durable event record before Woody can honestly claim to learn.
+
+**Explicitly frozen:** cadence as assumed controller, heart-rate integration, full fascia/learned metric, owned pipeline expansion, knowledge graph, social systems, monetisation, and activity-specific products. These are candidates after the two-week loop produces evidence.
+
+**Action needed:** rotate exposed credential; fix production build; interview the motorbike rider; define generic journey and transition event contracts; build the minimal next-track loop; run 6–8 matched founder sessions before passive sensing.
+
+**Category:** Product | Evidence | Workflow | Adaptive Journeys

@@ -1,22 +1,35 @@
 import type { Metadata } from 'next'
-import { Inter, Lora } from 'next/font/google'
+import { Syne, Epilogue, Space_Mono } from 'next/font/google'
 import './globals.css'
 
-const inter = Inter({
+// Woody design system fonts (VISUAL_LANGUAGE.md)
+// Syne: headings — geometric, confident, distinctive
+const syne = Syne({
   subsets: ['latin'],
-  variable: '--font-inter',
+  weight: ['400', '600', '700', '800'],
+  variable: '--font-syne',
   display: 'swap',
 })
 
-const lora = Lora({
+// Epilogue: body copy — legible, slightly condensed, human
+const epilogue = Epilogue({
   subsets: ['latin'],
-  variable: '--font-lora',
+  weight: ['300', '400', '500'],
+  variable: '--font-epilogue',
+  display: 'swap',
+})
+
+// Space Mono: data / coordinates / mono displays
+const spaceMono = Space_Mono({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-space-mono',
   display: 'swap',
 })
 
 export const metadata: Metadata = {
   title: 'Woody',
-  description: 'A curated music discovery experience',
+  description: 'Acoustic music discovery',
 }
 
 export default function RootLayout({
@@ -25,8 +38,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${lora.variable}`} suppressHydrationWarning>
-      <body className="bg-soil text-text-hi antialiased" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${syne.variable} ${epilogue.variable} ${spaceMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="bg-void text-moon antialiased" suppressHydrationWarning>
         {children}
       </body>
     </html>

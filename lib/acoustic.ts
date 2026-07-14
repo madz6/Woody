@@ -1,17 +1,17 @@
 /**
- * Woody Acoustic Intelligence Layer
- * ==================================
- * Deterministic acoustic ranking and personal taste model utilities.
+ * Woody Acoustic Intelligence Layer — LEGACY (4-dim proxy)
+ * ========================================================
+ * This module is the original /api/intent path: PersonaLens → 4-dim
+ * AcousticTarget {energy, bpmMin/Max, valenceProxy, spectralTarget} →
+ * weighted distance ranking against tracks measured by the Librosa /analyze
+ * endpoint.
  *
- * Architecture:
- *   1. AcousticFeatureVector - real measurements from packages/acoustic-service
- *   2. acousticTarget()      - translate PersonaLens → AcousticTarget
- *   3. acousticScore()       - score a track against a target (lower = closer)
- *   4. rankByAcoustic()      - sort a pool by acoustic score
- *   5. fetchAcousticFeatures() - call the acoustic service for a batch of URLs
- *   6. tasteToTarget()       - build a target from a user's taste centroid
+ * @deprecated for NAVIGATION purposes. The arc engine (lib/acousticService.ts +
+ * app/api/arc) navigates in CLAP 512-dim space using cosine distance, per
+ * WOODY_BUILD_SPEC.md Section 3 and .cursor/rules/woody-engine.mdc.
  *
- * The LLM is not involved here. This is pure math on audio measurements.
+ * Functions here remain in use by the existing globe path and intentToSuggestions().
+ * Do not call them from new arc-engine code.
  */
 
 import type {
@@ -28,6 +28,9 @@ import type {
 
 /** Derive an acoustic target from a PersonaLens.
  *  This is what we're looking for in acoustic feature space.
+ *
+ *  @deprecated Navigation now uses CLAP text embeddings as the target.
+ *  Kept for the existing /api/intent path that powers the globe.
  */
 export function acousticTargetFromLens(lens: PersonaLens): AcousticTarget {
   // Energy mapping: lens.energy level → 0-1 float
@@ -104,6 +107,10 @@ export function acousticTargetFromLens(lens: PersonaLens): AcousticTarget {
  *   - BPM (0.3): tempo is critical for context (running vs. chill)
  *   - Spectral centroid (0.15): brightness / production character
  *   - Valence proxy (0.15): emotional tone
+ *
+ *  @deprecated Arc navigation uses cosine distance in CLAP 512D space
+ *  (see acousticService.generateArc). This 4-dim score is retained for the
+ *  legacy /api/intent globe path only.
  */
 export function acousticScore(
   features: AcousticFeatureVector,
@@ -218,6 +225,10 @@ export function blendIntentBias(
 /** Rank a pool of tracks by acoustic score against a target.
  *  Tracks without features fall to the back (score = 0.999).
  *  Returns a new array sorted by ascending score (best matches first).
+ *
+ *  @deprecated Arc navigation uses {@link acousticService.generateArc} which
+ *  does a beam-search-with-relaxation in CLAP 512D, not a flat 4-dim ranking.
+ *  Retained for the existing /api/intent path that powers the globe.
  */
 export function rankByAcoustic(
   pool: Track[],

@@ -1,53 +1,124 @@
-"""
-Woody Acoustic Service — Modal.com Deployment
-==============================================
-Deploys service.py as a serverless endpoint on Modal.
+"""Woody Acoustic Service — Modal.com Deployment.
+
+Deploys main.py (CLAP + arc + legacy /analyze) as a Modal ASGI endpoint.
 
 Setup:
   pip install modal
-  modal token new   # authenticate once
+  modal token new           # one-time auth
   modal deploy modal_app.py
 
-After deploy, Modal prints your endpoint URL:
-  https://<your-workspace>--woody-acoustic-service-fastapi-app.modal.run
+Modal prints your endpoint URL after deploy:
+  https://<workspace>--woody-acoustic-clap-fastapi-app.modal.run
 
 Add it to .env.local:
-  ACOUSTIC_SERVICE_URL=https://<your-workspace>--woody-acoustic-service-fastapi-app.modal.run
+  ACOUSTIC_SERVICE_URL=https://<workspace>--woody-acoustic-clap-fastapi-app.modal.run
+
+GPU notes:
+  - T4 (gpu="T4") is sufficient for CLAP inference; ~$0.59/hr per Modal pricing
+  - container_idle_timeout=120 lets the container shut down 2 min after
+    last request, keeping costs near $0 for idle dev work
+  - First request to a cold container pays the model download + load (~30-60s)
+  - WOODY_PRELOAD_CLAP=1 forces eager load at container start (preferred for
+    deploys where you control idle-down timing)
 """
+
+from __future__ import annotations
 
 import modal
 
-# Build image with all audio processing dependencies
-# ffmpeg is required by librosa for MP3 decoding
+APP_NAME = "woody-acoustic-clap"
+
+# Image: Python 3.11, ffmpeg/libsndfile for librosa, then pip from requirements.txt
+# baked into the image so cold start doesn't re-resolve dependencies.
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("ffmpeg", "libsndfile1")
     .pip_install(
+        # FastAPI/web
         "fastapi[standard]==0.115.0",
-        "uvicorn==0.30.0",
-        "librosa==0.10.2",
-        "numpy==1.26.4",
-        "httpx==0.27.0",
+        "uvicorn[standard]==0.30.0",
         "pydantic==2.7.0",
-        "scipy==1.13.0",
+        # Audio (Layer 1 legacy + CLAP audio decode)
+        "librosa==0.10.2",
         "soundfile==0.12.1",
+        "scipy==1.13.0",
+        # CLAP — Layer 2 navigation
+        "torch>=2.2,<3",
+        "transformers>=4.45.0,<5",
+        # Embedding storage
+        "sqlite-vec==0.1.6",
+        # Networking
+        "httpx==0.27.0",
+        "numpy==1.26.4",
     )
+    # Copy source files into the image so the running container can import them
+    .add_local_dir(".", "/woody-acoustic", ignore=[".venv/**", "__pycache__/**", "*.pyc", "data/**"])
 )
 
-app = modal.App("woody-acoustic-service", image=image)
+app = modal.App(APP_NAME, image=image)
 
 
 @app.function(
-    # Cold start time is acceptable for discovery — not a real-time playback dependency
-    container_idle_timeout=120,
-    # CPU is sufficient for librosa — no GPU needed
+    gpu="T4",                       # CLAP inference — T4 is plenty
+    container_idle_timeout=120,     # idle-down after 2 min, keeps dev cost low
+    timeout=300,                    # allow 5-min requests (batch of 50 tracks on CPU edge case)
+    memory=4096,                    # CLAP ~1.5GB model + processing headroom
     cpu=2.0,
-    memory=1024,
-    # Timeout generous enough for 20 concurrent 30s audio downloads + analysis
-    timeout=120,
+    secrets=[],                     # add modal.Secret.from_name("woody-spotify") if seeding via Modal
 )
 @modal.asgi_app()
 def fastapi_app():
-    # Import here so Modal serializes the function with the image context
-    from service import app as _app  # noqa: PLC0415
+    """Mount the local main.py FastAPI app inside the Modal container."""
+    import os
+    import sys
+
+    # The container has the source at /woody-acoustic — put it on path
+    sys.path.insert(0, "/woody-acoustic")
+    # Preload CLAP on container start so the first inference doesn't pay the load cost
+    os.environ["WOODY_PRELOAD_CLAP"] = "1"
+
+    from main import app as _app  # noqa: PLC0415
     return _app
+
+
+# ─── Parity test helper ──────────────────────────────────────────────────────
+# Run this LOCALLY after deploying to confirm Modal embeddings match the local
+# service within 1e-4 cosine. Same input text -> very similar 512D vector.
+#
+#   python -m modal_app parity_test --local http://localhost:8765 \
+#                                    --modal https://<workspace>--woody-acoustic-clap-fastapi-app.modal.run
+
+if __name__ == "__main__":
+    import argparse
+    import asyncio
+
+    import httpx
+    import numpy as np
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=["parity_test"])
+    parser.add_argument("--local", default="http://localhost:8765")
+    parser.add_argument("--modal", required=True)
+    args = parser.parse_args()
+
+    async def parity() -> int:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            tests = [
+                "late night drive on an empty highway",
+                "deep focus coding session no lyrics",
+                "morning run",
+            ]
+            for text in tests:
+                local_resp = await client.post(f"{args.local}/embed/text", json={"text": text})
+                modal_resp = await client.post(f"{args.modal}/embed/text", json={"text": text})
+                local_vec = np.asarray(local_resp.json()["embedding"], dtype=np.float32)
+                modal_vec = np.asarray(modal_resp.json()["embedding"], dtype=np.float32)
+                cos = float(np.dot(local_vec, modal_vec))  # both unit-norm
+                cosine_dist = 1.0 - cos
+                ok = cosine_dist < 1e-4
+                marker = "OK " if ok else "FAIL"
+                print(f"  {marker}  '{text}'  cosine_distance={cosine_dist:.6f}")
+        return 0
+
+    if args.command == "parity_test":
+        raise SystemExit(asyncio.run(parity()))

@@ -1,0 +1,58 @@
+---
+description: Woody security, privacy, and engineering standards. Apply to all backend code and API routes.
+globs: app/api/**, lib/auth/**, lib/spotify.ts, packages/acoustic-service/**
+alwaysApply: false
+---
+
+# Woody — Security & Engineering Standards
+
+> **Repo:** Auth/API surface in `app/api/`, `lib/auth/`, `lib/spotify.ts`, `packages/acoustic-service/`; see `docs/IMPLEMENTATION_SSOT.md`.
+
+## Authentication
+- Spotify OAuth: Authorization Code Flow only (not implicit, not PKCE for server-side)
+- Refresh tokens: stored encrypted at rest. Never in plaintext. Never logged.
+- Access tokens: never log them, never include in error messages, never expose to frontend directly
+- Session tokens: signed and expiring. Check expiry before every Spotify API call.
+- Spotify scopes: `user-library-read`, `user-top-read`, `user-read-recently-played`, `streaming`, `user-read-playback-state`, `user-modify-playback-state`. No over-permissioning.
+- All credentials in `.env`. `.env` in `.gitignore`. Check before first commit.
+
+## Data Privacy
+- User listening behavior is PII. Treat it as such.
+- Do not log individual listening events in plaintext.
+- Third-party API calls (OpenAI/Anthropic for intent parsing): send intent text + target coordinates only. Never send username, listening history, or identifying user data.
+- Design schema with deletion in mind — be able to delete all user data on request (GDPR baseline).
+- Federated learning: gradients only to server, not raw behavioral data.
+- Screen Capture API (YouTube integration): process audio in-browser via Essentia.js in SharedArrayBuffer only. Never upload. Requires COOP/COEP headers.
+- Contextual signals: expose only the acoustic direction vector they produce, never the raw signal data.
+
+## Input Validation
+- All LLM-returned 5D coordinates: must be float 0.0–1.0. Clamp: `max(0.0, min(1.0, val))`.
+- Spotify Audio Features can return null (local files, podcasts): skip track, do not crash.
+- Intent text input: sanitize before sending to LLM. Maximum length cap (512 chars).
+- All API request bodies: validate with Pydantic models before processing.
+
+## Error Handling
+- Spotify 429 rate limits: exponential backoff with jitter. Never hammer on error.
+- LLM API failures: fall back to keyword heuristics, not a crash. Product usable without LLM.
+- Database failures: return cached or partial results where possible, fail gracefully.
+- Token expiry: auto-refresh silently. Never surface OAuth errors as raw error messages to users.
+- Never expose stack traces or internal error messages in API responses.
+
+## Security Hard Rules
+- No SQL string concatenation anywhere — parameterized queries only
+- No `eval()` or `exec()` on user-provided strings
+- CORS: lock to known frontend origin in production. Never `*` in production.
+- Content Security Policy headers on frontend responses
+- YouTube integration: `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` required for SharedArrayBuffer
+
+## Code Quality
+- Acoustic coordinate computation = pure functions. No side effects. Easy to test.
+- 5D mapping formula lives in one place (`acoustic.py`). Never duplicate it.
+- All Spotify API calls go through `spotify.py`. No direct API calls elsewhere.
+- Arc generation algorithm must be independently testable from the API layer.
+- Every function has one clear responsibility. Two responsibilities = split it.
+
+## Engineering Conscience Levels
+- **Silent** on routine execution
+- **One-line flag** on moderate risks (e.g., missing validation, potential data exposure path)
+- **Stop and interrupt** on critical risks: data exposure, auth bypass, ML bias violations, PII in logs

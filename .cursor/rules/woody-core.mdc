@@ -1,0 +1,48 @@
+---
+description: Woody product framing, document hierarchy, and what not to build. Always active.
+alwaysApply: true
+---
+
+# Woody — Core Rules
+
+## What Woody Is
+Woody is an **acoustic navigation layer** on top of Spotify. Not a streaming service, not a recommendation engine, not a playlist generator. A navigator — it takes acoustic coordinate instructions, not genre labels.
+
+**The unit is the session arc, not the track.** Every interaction should be arc-shaped: start state → trajectory → landing.
+
+This is a **portfolio/prototype project**. The real IP is the acoustic attribution and modelling engine. Build functional, clean, demonstrable. Fork into use case demos from the same core.
+
+## Document Hierarchy (resolve conflicts in this order)
+1. `MASTER_BUILD_PROMPT.md` — canonical source of truth
+2. `docs/IMPLEMENTATION_SSOT.md` — implementation reality for this repo (wins on stack/architecture conflicts)
+3. `PSYCHOLOGY.md` — behavioral laws for engine design
+4. `VISUAL_LANGUAGE.md` — visual decisions (closed, do not reopen)
+5. `FEATURES.md` — feature registry, check before building anything
+6. `SHELVED.md` — rejected ideas, check before proposing anything
+7. `SESSION_NOTES.md` — conversational decisions not yet in other docs
+
+## Before Every Feature
+- Check `FEATURES.md` — it may already exist with decisions attached
+- Check `SHELVED.md` — it may have been rejected with documented reasons
+- If it's in SHELVED, do not re-propose it without explicit user instruction
+
+## What Not to Build (hard stops)
+- Streaming / audio hosting (no licensing)
+- Star ratings, reviews, or opinion systems
+- Follower / influence social model
+- Glassmorphism or frosted blur anywhere
+- Neon / synthwave aesthetic
+- Album art as the visual hero of now-playing
+- Generic AI chat interface as a fallback UX
+- Tab-based navigation
+- Gamified reputation scores
+- Social features before there is content to show
+
+## Stack (per `docs/IMPLEMENTATION_SSOT.md`)
+- Product app: **Next.js 15 (App Router) + TypeScript + Tailwind** at repo root (`app/`, `components/`, `lib/`, `hooks/`)
+- Auth: Spotify OAuth 2.0 Authorization Code Flow (server-side, via Next.js route handlers)
+- Database: SQLite for prototype → pgvector on Postgres
+- Audio microservice: Python lives **only** in `packages/acoustic-service` (P2); optional HTTP integration via `lib/acoustic.ts`
+- LLM: OpenAI or Anthropic API for intent parsing only
+
+Long-form vision in `PRD.md` / `BUILD_BRIEF.md` (FastAPI, beam search, vector store, etc.) is **not** the day-to-day implementation checklist unless explicitly ported. When in doubt, `IMPLEMENTATION_SSOT.md` wins on stack questions.

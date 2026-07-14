@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { embedText, isAcousticServiceEnabled } from '@/lib/acousticService'
 import { classifyIntentMode, intentToSuggestions } from '@/lib/intent'
-import type { IntentMemoryEntry, PersonaLens, TasteCentroid } from '@/lib/types'
+import type { CLAPEmbedding, IntentMemoryEntry, PersonaLens, TasteCentroid } from '@/lib/types'
 
 function parsePreviousLens(value: unknown): PersonaLens | null {
   if (!value || typeof value !== 'object') return null
@@ -161,26 +162,51 @@ export async function POST(request: NextRequest) {
     const tasteCentroid = parseTasteCentroid(tasteCentroidRaw)
     const steer = parseSteer(steerRaw)
 
-    const { suggestions, personaLens } = await intentToSuggestions(
-      trimmed,
-      tasteProfile ?? null,
-      lensForParse,
-      zoneIdSafe,
-      {
-        excludeTrackIds: excludeTrackIdsSafe,
-        intentMemoryEntries: intentMemoryEntriesSafe,
-        firstSession: firstSession === true,
-        tasteCentroid,
-        ...(steer ? { steer } : {}),
-      }
-    )
+    // Run the suggestion pipeline and the optional CLAP text embed in parallel.
+    // The CLAP embed is non-load-bearing for this route: globe consumers ignore it,
+    // but the listen-test and /api/arc layers benefit when it is precomputed here.
+    // Graceful degradation: if the acoustic service is offline, targetEmbedding = null
+    // and the rest of the response is unaffected.
+    const embedPromise: Promise<CLAPEmbedding | null> = isAcousticServiceEnabled()
+      ? embedText(trimmed).catch((err) => {
+          console.warn('[/api/intent] CLAP text embed failed (non-fatal):', err)
+          return null
+        })
+      : Promise.resolve(null)
+
+    const [{ suggestions, personaLens }, targetEmbedding] = await Promise.all([
+      intentToSuggestions(
+        trimmed,
+        tasteProfile ?? null,
+        lensForParse,
+        zoneIdSafe,
+        {
+          excludeTrackIds: excludeTrackIdsSafe,
+          intentMemoryEntries: intentMemoryEntriesSafe,
+          firstSession: firstSession === true,
+          tasteCentroid,
+          ...(steer ? { steer } : {}),
+        }
+      ),
+      embedPromise,
+    ])
 
     const intent_latency_ms = Date.now() - started
     if (process.env.NODE_ENV === 'development') {
-      console.info('[/api/intent] latency_ms', intent_latency_ms, 'count', suggestions.length)
+      console.info(
+        '[/api/intent] latency_ms', intent_latency_ms,
+        'count', suggestions.length,
+        'clapEmbedding', targetEmbedding ? 'yes' : 'no',
+      )
     }
 
-    return NextResponse.json({ suggestions, personaLens, mode, intent_latency_ms })
+    return NextResponse.json({
+      suggestions,
+      personaLens,
+      mode,
+      intent_latency_ms,
+      targetEmbedding,
+    })
   } catch (err) {
     console.error('[/api/intent] Error:', err)
     return NextResponse.json({ error: 'Failed to process intent' }, { status: 500 })

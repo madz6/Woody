@@ -1,9 +1,16 @@
 .env.local
 .env
+.env.*
+!.env.local.example
 .next/
 node_modules/
 .venv/
 __pycache__/
 *.pyc
 *.log
+*.tsbuildinfo
+.vercel/
+packages/acoustic-service/data/*.db
+packages/acoustic-service/founder_listen*.txt
+packages/acoustic-service/test_arc_output*.txt
 .DS_Store

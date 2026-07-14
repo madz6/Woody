@@ -1,5 +1,28 @@
 # Woody — Workspace Context
 
+## After Any Context Compaction — Read First
+
+1. `CONTEXT_SNAPSHOT.md` — quick-read current state of the product and build
+2. `PRODUCT_VISION.md` — the product belief, who it's for, core mechanic (updated 2026-06-23, major reorientation)
+3. `REVISIT.md` — all open questions and things needing sessions. Check before every product or architecture discussion.
+
+---
+
+## Build Authority
+
+**Before writing any code, read `MASTER_BUILD_PROMPT.md`.** It is the single source of truth.
+
+Resolve conflicts using its Section 0 hierarchy:
+- UI / visual work → also read `VISUAL_LANGUAGE.md`
+- Engine / session logic → also read `PSYCHOLOGY.md`
+- Any new feature → check `FEATURES.md` and `SHELVED.md` first
+- Architecture decisions → check `SESSION_NOTES.md` for decisions not yet in other docs
+- Product/strategy decisions → check `PRODUCT_VISION.md` and `REVISIT.md` first
+
+Stack: Next.js 15 + TS + Tailwind at repo root; Python in packages/acoustic-service only. IMPLEMENTATION_SSOT wins stack conflicts.
+
+---
+
 ## What Woody Is
 
 Woody is an acoustic-intelligence music discovery and curation platform. It is not a streaming service. It sits on top of Spotify (and eventually other sources) as a discovery, curation, and identity layer — the way Letterboxd sits on top of watching films.

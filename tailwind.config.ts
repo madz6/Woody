@@ -9,21 +9,47 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        soil:    '#0F0F0D',
-        moss:    '#171713',
-        bark:    '#1E1B18',
-        'bark-light': '#2A2520',
-        'text-hi':  '#E8E4DC',
-        'text-mid': '#8A8680',
-        'text-lo':  '#4A4844',
-        violet:  '#7C6BCE',
-        amber:   '#C4874A',
-        'moss-green': '#4E6B45',
-        rose:    '#8C5C5C',
+        // ── Canonical design system tokens (VISUAL_LANGUAGE.md / CLAUDE.md) ──
+        void:   '#0a0a0f',   // primary background
+        teal:   '#00e5c4',   // primary accent
+        cobalt: '#4455ff',   // secondary accent
+        moon:   '#f0ede6',   // primary text
+        amber:  '#f0a040',   // recommendation / highlight
+
+        // ── Surface layers ──
+        // Keeping soil/bark/moss aliases so existing components don't break.
+        // These map approximately to the design system surface hierarchy.
+        soil:         '#0a0a0f',   // = void (was #0F0F0D — corrected)
+        moss:         '#111116',   // surface-1: slightly lighter than void
+        bark:         '#18181f',   // surface-2: cards, panels
+        'bark-light': '#22222c',   // surface-3: hover states
+
+        // ── Text scale ──
+        'text-hi':  '#f0ede6',   // = moon
+        'text-mid': '#8a8790',   // mid-emphasis
+        'text-lo':  '#46444c',   // de-emphasized
+
+        // ── Acoustic session tones (mapped to main accent system) ──
+        // violet → cobalt family (cold/electric sessions)
+        // amber stays amber but now correct value
+        // moss-green → warm-organic sessions
+        // rose → intimate/mournful sessions
+        violet:      '#6070e8',   // cold electric — shifted toward cobalt
+        'moss-green': '#4E6B45',  // warm organic
+        rose:        '#8C5C5C',   // intimate/dark
+
+        // ── Glow helpers ──
+        'teal-glow':   'rgba(0,229,196,0.15)',
+        'cobalt-glow': 'rgba(68,85,255,0.15)',
+        'amber-glow':  'rgba(240,160,64,0.15)',
       },
       fontFamily: {
-        sans:  ['var(--font-inter)', 'sans-serif'],
-        serif: ['var(--font-lora)', 'serif'],
+        // Woody design system font stack (VISUAL_LANGUAGE.md)
+        sans:  ['var(--font-epilogue)', 'system-ui', 'sans-serif'],  // body
+        display: ['var(--font-syne)', 'system-ui', 'sans-serif'],    // headings
+        mono:  ['var(--font-space-mono)', 'monospace'],              // data / coordinates
+        // Legacy aliases — kept so existing className references don't break
+        serif: ['var(--font-epilogue)', 'system-ui', 'sans-serif'],
       },
       fontSize: {
         'display':    ['36px', { lineHeight: '1.15' }],
@@ -35,11 +61,13 @@ const config: Config = {
         'label':      ['10px', { lineHeight: '1.4', letterSpacing: '0.1em' }],
       },
       boxShadow: {
-        'glow-violet': '0 0 12px rgba(124, 107, 206, 0.4)',
-        'glow-amber':  '0 0 12px rgba(196, 135, 74, 0.4)',
+        'glow-teal':   '0 0 16px rgba(0, 229, 196, 0.35)',
+        'glow-cobalt': '0 0 16px rgba(68, 85, 255, 0.35)',
+        'glow-amber':  '0 0 16px rgba(240, 160, 64, 0.35)',
+        'glow-violet': '0 0 12px rgba(96, 112, 232, 0.4)',
         'glow-moss':   '0 0 12px rgba(78, 107, 69, 0.4)',
         'glow-rose':   '0 0 12px rgba(140, 92, 92, 0.4)',
-        'glow-hi':     '0 0 8px rgba(232, 228, 220, 0.2)',
+        'glow-hi':     '0 0 8px rgba(240, 237, 230, 0.2)',
       },
       transitionTimingFunction: {
         'settle':  'cubic-bezier(0, 0, 0.2, 1)',

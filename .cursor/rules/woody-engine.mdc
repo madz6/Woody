@@ -1,0 +1,261 @@
+---
+description: Woody acoustic engine — CLAP navigation, arc generation, psychology laws, API routes. Apply when working on backend Python, acoustic service, or engine logic.
+globs: lib/**/*.ts, app/api/**, packages/shared/**, packages/acoustic-service/**
+alwaysApply: false
+---
+
+# Woody — Engine Rules
+
+> **Repo:** TypeScript engine in `lib/`, `app/api/`, `packages/shared/`; Python acoustic service in `packages/acoustic-service/`. See `docs/IMPLEMENTATION_SSOT.md` and `WOODY_BUILD_SPEC.md` (canonical engineering reference).
+
+---
+
+## CRITICAL ARCHITECTURE — READ FIRST
+
+**Woody is a navigation engine, not a recommendation engine.** It takes acoustic coordinate instructions and finds a path. The distinction matters in every naming decision, every API contract, every comment.
+
+### The 4-Layer Stack
+
+```
+Layer 0  Raw audio
+Layer 1  Essentia signal features ~400D (deterministic extraction)
+Layer 2  CLAP embeddings 512D  ← PRIMARY NAVIGATION LAYER
+         model: laion/larger_clap_music_and_speech
+         multimodal: text "late night drive" and matching audio are close in this space
+Layer 3  5D perceptual projection  ← DISPLAY ONLY (lossy, user-facing)
+```
+
+**Layer 2 is where all navigation happens.** Arc generation, k-NN search, territory computation, cold start — all operate on 512-dim CLAP vectors using cosine similarity.
+
+**Layer 3 (5D) is a display output only.** It is computed from CLAP embeddings via linear probe (Phase 2) or heuristic formula (Phase 1). It is never used as a navigation target. Never feed 5D coordinates into a distance function for arc selection.
+
+---
+
+## Navigation Distance (use for ALL k-NN and arc search)
+
+```python
+import numpy as np
+
+def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """Primary distance metric — operates in 512D CLAP space."""
+    return 1.0 - float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+# Embeddings must be L2-normalised before storage.
+# After normalisation: cosine_distance = 1 - dot(a, b)  (faster, same result)
+```
+
+**Arc transition coherence constraint:** `cosine_distance(track_a, track_b) < 0.35`
+**Coherence relaxation schedule:** 1.0× → 1.5× → 2.0× → unlimited (beam search fallback)
+
+### Phase 2+ Distance (do not implement in Phase 1)
+- Phase 2: Mahalanobis (accounts for correlated CLAP dimensions)
+- Phase 3: Learned contrastive metric trained on skip/replay/completion signals
+
+---
+
+## 5D Display Formula (Phase 1 heuristic — DISPLAY ONLY)
+
+This formula is retained for the visual field renderer and user-facing coordinate display. **Do not use it for navigation, k-NN, or arc generation.**
+
+```python
+def spotify_to_5d(features: dict) -> dict:
+    """Phase 1 heuristic. Display only. Navigation uses CLAP 512D."""
+    loudness_n = (features['loudness'] + 60) / 60  # normalize dB → 0–1
+    return {
+        'energy':     features['energy'],
+        'warmth':     features['valence'] * 0.6 + features['acousticness'] * 0.4,
+        'density':    loudness_n * 0.5 + features['energy'] * 0.5,
+        'organicity': features['acousticness'] * 0.6 + features['instrumentalness'] * 0.4,
+        'sacred':     features['valence'] * 0.3 + features['instrumentalness'] * 0.4 + features['acousticness'] * 0.3,
+    }
+```
+
+Phase 2 upgrade: Ridge regression linear probe (5×512 weight matrix) trained on 500 annotated tracks with Bradley-Terry pairwise calibration. See `WOODY_BUILD_SPEC.md` Section 8.
+
+---
+
+## Arc Generation Rules (beam search in CLAP 512D space)
+
+### Arc Shapes
+| Shape | When | Behaviour |
+|-------|------|-----------|
+| `journey` | default | linear interpolation from current → target |
+| `plateau` | study/focus/work signals | reach target fast, hold for duration |
+| `discharge` | process/feel/sad/grief signals | start congruent with current state, move later |
+| `peak_early` | workout/run/lift signals | peak at ~40% of arc, descend to BRAC recovery |
+
+### Waypoint interpolation
+```python
+def get_waypoint(progress: float, start: np.ndarray, target: np.ndarray, shape: str) -> np.ndarray:
+    if shape == 'journey':
+        t = progress
+    elif shape == 'plateau':
+        t = min(1.0, progress * 3.0)  # reach target by 33% then hold
+    elif shape == 'discharge':
+        t = max(0.0, (progress - 0.3) / 0.7)  # hold start for first 30%
+    elif shape == 'peak_early':
+        t = 1.0 - abs(progress - 0.4) / 0.6 if progress < 0.4 else (1.0 - progress) / 0.6
+    return start + t * (target - start)  # in CLAP embedding space
+```
+
+### Frisson engineering
+Place high-energy/density tracks at arc progress 30% ±6%, 65% ±6%, 85% ±6% — but only after ≥3 consecutive lower-energy tracks. Violating expectation → resolution = dopamine reward. Do not force frisson without the setup.
+
+### Step selection
+At each arc step: find nearest CLAP neighbours to waypoint, filter by coherence constraint, apply recency penalty (tracks played in last 2 hours get 0.7× score multiplier), select best candidate.
+
+---
+
+## Skip Signal Taxonomy
+
+| Playtime | Signal | Action |
+|----------|--------|--------|
+| < 15% | Acoustic mismatch — wrong neighbourhood | Attribute per dimension, adjust territory centroid |
+| 15–70% | Moderate engagement | Log, no immediate action |
+| > 70% | Transition signal — track was right, arc can move | **NOT rejection** — proceed to next step |
+
+**The > 70% skip is a psychology law (PSYCHOLOGY.md LAW_7).** Never treat it as negative signal. The track served its purpose.
+
+---
+
+## Intent → CLAP Target Pipeline
+
+```
+User intent text
+    ↓
+[parallel]
+    A. CLAP text embed  → 512D navigation target
+    B. LLM PersonaLens  → Spotify search seeds (artist names, genres)
+    ↓
+PersonaLens seeds → Spotify search → track pool (100–200 tracks)
+Track pool → batch CLAP audio embed → 512D per track
+    ↓
+arc/generate: beam search from current_position → target embedding
+```
+
+**PersonaLens is search-only.** It generates Spotify API query strings. It does not produce acoustic targets. The acoustic target is always the CLAP text embedding of the intent.
+
+**Arc shape inference** from intent text — check `lib/arcShape.ts`:
+- DISCHARGE_SIGNALS: process, feel it, meet me where i am, sad, grief, cry, heavy, loss
+- PLATEAU_SIGNALS: study, focus, work, deep work, flow, concentrate, locked in
+- PEAK_EARLY_SIGNALS: workout, run, lift, training, hype, pregame, sprint
+
+---
+
+## Psychology Laws — Engine Must Enforce
+
+**Match before you move:** Arc starts acoustically close to current state (cosine_distance < 0.15 from user's last track). Never start at the destination.
+
+**Earn the peaks:** Frisson candidates only at 30–40%, 65–70%, 85–90% of arc. Requires ≥3 lower-energy tracks before each spike.
+
+**Novelty is earned:** First 20–30% of session anchors in familiar acoustic territory (measured by distance from territory centroid). Discovery only on explicit request.
+
+**Metabolic floor:** Never drop energy + density to zero. Minimum floor prevents session death.
+
+**90-minute default:** One BRAC cycle. Plateau arcs: density dip at ~80 min then recovery. Peak-early arcs: apex at 40%, BRAC descent after 60 min.
+
+**Soft Pause = third state:** Not binary play/stop. Acoustic resolution → hold → re-entry protocol.
+
+**Context informs direction, not selection:** Activity signals (run, study, drive) shift the acoustic direction vector only. Track selection governed by CLAP distance + behavioral history.
+
+---
+
+## Acoustic Reference Profiles (5D display coordinates — not navigation targets)
+
+| Goal | Energy | Warmth | Density | Organicity | Sacred | Arc Shape |
+|------|--------|--------|---------|-----------|--------|-----------|
+| Deep focus | 0.35 | 0.55 | 0.25 | 0.65 | 0.45 | Plateau |
+| Zone 2 run | 0.45 | 0.55 | 0.40 | 0.50 | 0.20 | Plateau |
+| High intensity | 0.85 | 0.50 | 0.75 | 0.35 | 0.40 | Peak Early |
+| Wind down | 0.20 | 0.75 | 0.20 | 0.70 | 0.70 | Discharge |
+| Lock-in | 0.20→0.45 | 0.40 | 0.20→0.35 | 0.65 | 0.45 | Plateau |
+| Processing | 0.25 | 0.60 | 0.20 | 0.65 | 0.55 | Discharge |
+
+These feed the intent system as approximate reference points. The arc navigates in CLAP space toward the text embedding, not toward these coordinates.
+
+---
+
+## API Routes
+
+```
+# Acoustic Service (Python FastAPI — packages/acoustic-service/)
+POST /embed/audio           → {embedding: [...512...], dim: 512}           < 800ms
+POST /embed/audio/batch     → {results: [...], failed: [...]}              < 3000ms/20 tracks
+POST /embed/text            → {embedding: [...512...], dim: 512}           < 100ms
+POST /arc/generate          → {steps: [...], reached_target: bool, ...}
+POST /5d/project            → {energy, warmth, density, organicity, sacred}
+GET  /health                → {status: ok, model: ...}
+
+# Next.js App Routes (app/api/)
+GET  /auth/login             → Spotify OAuth redirect
+GET  /auth/callback          → Exchange code, store tokens
+POST /library/import         → Batch fetch + CLAP embed + store in sqlite-vec
+GET  /library/status         → Import progress
+POST /intent                 → {intent} → {personaLens, suggestions, targetEmbedding}
+POST /arc                    → {intent, arcLength?, arcShape?} → {steps[]}
+POST /arc/[id]/signal        → {type: skip|replay|complete|save, timestamp_ms, playtime_ms}
+GET  /territory              → All user tracks + CLAP embeddings + 5D coords
+POST /probe/respond          → {probeTrackId, signalType} → updated territory centroid
+```
+
+---
+
+## sqlite-vec Schema
+
+```sql
+-- Main track table
+CREATE TABLE track_embeddings (
+    track_id        TEXT PRIMARY KEY,
+    spotify_id      TEXT UNIQUE,
+    clap_vec        BLOB NOT NULL,      -- 512 × float32, L2-normalised, little-endian
+    energy          REAL, warmth REAL, density REAL, organicity REAL, sacred REAL,
+    bpm             REAL, loudness_db   REAL,
+    title           TEXT, artist        TEXT, album TEXT,
+    indexed_at      INTEGER DEFAULT (unixepoch())
+);
+
+-- Vector index (cosine similarity via sqlite-vec)
+CREATE VIRTUAL TABLE vec_tracks USING vec0(
+    track_id TEXT,
+    clap_vec FLOAT[512]
+);
+```
+
+```python
+import struct
+
+def pack_embedding(vec: list[float]) -> bytes:
+    return struct.pack(f'{len(vec)}f', *vec)
+
+def unpack_embedding(blob: bytes) -> list[float]:
+    n = len(blob) // 4
+    return list(struct.unpack(f'{n}f', blob))
+
+def find_nearest(db, query_vec: list[float], limit: int = 50) -> list[dict]:
+    packed = pack_embedding(query_vec)
+    return db.execute(
+        "SELECT track_id, distance FROM vec_tracks WHERE clap_vec MATCH ? AND k = ?",
+        [packed, limit]
+    ).fetchall()
+```
+
+---
+
+## Validation Rules
+
+- Every CLAP embedding must be L2-normalised before storage (`vec / np.linalg.norm(vec)`)
+- Cosine distance between consecutive arc steps must be < 0.35 (relaxable)
+- Spotify Audio Features can return null (local files, podcasts) — skip track, do not crash
+- 5D coordinates must be float 0.0–1.0 — clamp: `max(0.0, min(1.0, value))`
+- CLAP embeddings are 512-dim float32 — reject any other shape at ingestion
+
+---
+
+## Hard Stops (from SHELVED.md)
+
+- **No A* search** — beam search is correct and sufficient. A* was evaluated and rejected.
+- **No Euclidean distance in 5D space for navigation** — superseded by cosine in CLAP 512D.
+- **No LLM prompt engineering for 5D calibration** — BERT/linear probe is the path.
+- **No JEPA** — deferred to Phase 3 behavioral modeling, if ever.
+- **No Spotify history as primary cold start** — superseded by Bayesian acoustic probe.
+- **No "recommendation" language in code or comments** — this is navigation.

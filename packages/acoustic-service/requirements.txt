@@ -1,9 +1,29 @@
+# Web framework
 fastapi[standard]==0.115.0
 uvicorn[standard]==0.30.0
-librosa==0.10.2
-numpy==1.26.4
-httpx==0.27.0
 pydantic==2.7.0
-scipy==1.13.0
+
+# Audio analysis (Layer 1 — legacy /analyze endpoint, kept for backward compat)
+librosa==0.10.2
 soundfile==0.12.1
-# ffmpeg must be installed separately: brew install ffmpeg (macOS) / apt install ffmpeg (Linux)
+scipy==1.13.0
+
+# CLAP — Layer 2 (PRIMARY NAVIGATION LAYER per WOODY_BUILD_SPEC.md Section 3)
+# torch wheels for Python 3.11 ship via standard pypi. For CPU-only Windows install,
+# users may swap to torch==2.4.1+cpu via --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2,<3
+transformers>=4.45.0,<5
+
+# Embedding storage (Layer 2 store per WOODY_BUILD_SPEC.md Section 4)
+sqlite-vec==0.1.6
+
+# Networking
+httpx==0.27.0
+
+# Numerics
+numpy==1.26.4
+
+# Note: ffmpeg must be installed separately and on PATH for librosa MP3/M4A decoding.
+# Windows:   winget install ffmpeg   OR   choco install ffmpeg   OR   scoop install ffmpeg
+# macOS:     brew install ffmpeg
+# Ubuntu:    sudo apt install ffmpeg

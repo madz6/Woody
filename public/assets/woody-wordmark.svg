@@ -1,0 +1,30 @@
+<svg viewBox="0 0 240 48" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!--
+    Woody wordmark — Syne 800 geometric feel, recreated as paths
+    Primary: #f0ede6 (moon) on transparent
+    Accent dot: #00e5c4 (teal)
+  -->
+  <style>
+    text {
+      font-family: 'Syne', system-ui, sans-serif;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+  </style>
+
+  <!-- Wordmark text — rendered as geometric letterforms -->
+  <!-- W -->
+  <polygon points="8,8 14,8 20,32 26,14 32,32 38,8 44,8 34,42 26,20 18,42" fill="#f0ede6"/>
+  <!-- o -->
+  <ellipse cx="56" cy="28" rx="8" ry="10" stroke="#f0ede6" stroke-width="4" fill="none"/>
+  <!-- o (open) inner — slightly open on right to feel lighter -->
+  <!-- d -->
+  <rect x="74" y="8" width="4" height="34" rx="1" fill="#f0ede6"/>
+  <path d="M78 18 Q94 18 94 28 Q94 38 78 38" stroke="#f0ede6" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- y -->
+  <line x1="102" y1="18" x2="112" y2="36" stroke="#f0ede6" stroke-width="4" stroke-linecap="round"/>
+  <line x1="122" y1="18" x2="107" y2="46" stroke="#f0ede6" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Teal accent dot — marks the 'i' in acoustic identity -->
+  <circle cx="130" cy="10" r="3.5" fill="#00e5c4"/>
+</svg>

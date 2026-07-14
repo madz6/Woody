@@ -1,0 +1,109 @@
+---
+description: Woody visual language — closed design decisions, design tokens, canvas renderer rules. Apply when writing HTML, CSS, JS, or canvas code.
+globs: **/*.{html,css,js,tsx,ts}, tailwind.config.ts, brand/**, **/acoustic-field*, **/style*
+alwaysApply: false
+---
+
+# Woody — Visual Rules
+
+> **Repo:** Next.js 15 App Router UI (`app/`, `components/`, `brand/`); see `docs/IMPLEMENTATION_SSOT.md`.
+
+## These Decisions Are Closed
+Do not redesign, deviate, or propose alternatives to anything in this file without convening a full visual language session.
+
+## Design Tokens — Never Deviate
+
+```css
+--void:   #0a0a0f   /* base background — always, never lighter */
+--teal:   #00e5c4   /* primary accent — actions, territory, selected */
+--cobalt: #4455ff   /* secondary — cold acoustic states, high energy + low warmth */
+--moon:   #f0ede6   /* primary text */
+--amber:  #f0a040   /* warm acoustic states, recommendations, highlights */
+```
+
+```
+Syne      → headings (800/700/600) — all caps when large, mixed case when small
+Epilogue  → body (300/400/500)
+Space Mono → all numbers, coordinates, data labels
+```
+
+**Rules that cannot be broken:**
+- Always dark theme. No light mode. Ever.
+- Grain overlay always present (~8% opacity SVG noise or CSS texture). Structural, not decorative.
+- Borders: `rgba(240, 237, 230, 0.10)` only. No stronger borders.
+- No frosted blur. No transparency stacking. No glassmorphism.
+- No glow effects except when directly derived from warmth dimension data.
+- No neon/synthwave. Teal and cobalt are precise, not decorative.
+
+## The Two Worlds (required, not optional)
+
+**World B (base layer):** Vera Molnár / Sol LeWitt. Rule-based geometric structures — grids that warp, lines that accumulate, systematic patterns. Gives structure and precision.
+
+**World A (accent layer):** Fluid rounded forms — biological illustration quality, field notes feeling. Overlaid on World B. Gives life and warmth.
+
+Both worlds are required. Pure B without A reads cold and academic. Pure A without B reads soft and unanchored.
+
+## Acoustic Field → Visual Mapping
+
+| Dimension | Visual effect |
+|-----------|---------------|
+| Energy | Pulse rate / geometry transformation speed |
+| Warmth | Amber glow intensity; void softens |
+| Density | Layering complexity — number of active geometric structures |
+| Organicity | World B/A balance — more organicity = more fluid forms, less geometry |
+| Sacred | Radial expansion, increasing stillness between pulses |
+
+## Canvas Renderer Rules
+
+```javascript
+// Metabolic floor — field is NEVER dead
+const pulseRate = 0.2 + (energy * 1.6);  // 0.2 minimum, 1.8 maximum
+const t_scaled = t * pulseRate;
+
+// Ground pools must be perceptible: 8–15% opacity, not 2–3%
+// Cobalt: rgba(68, 85, 255, 0.08–0.12)
+// Teal:   rgba(0, 229, 196, 0.06–0.10)
+// Amber:  rgba(240, 160, 64, ...) — only when warmth > 0.30
+
+// Wrap all init in load event to prevent offsetWidth = 0
+window.addEventListener('load', function() { ... });
+
+// Fallback dimensions
+const W = canvas.offsetWidth || 800;
+const H = canvas.offsetHeight || 600;
+
+// Canvas resize: use ResizeObserver, not fixed dimensions
+// Font rendering: document.fonts.ready.then(...) before text on artifact canvases
+```
+
+**Layer order (always):**
+1. Clear with `#0a0a0f`
+2. Ground colour pools
+3. World B — geometric field
+4. World A — fluid rounded forms
+5. Sacred geometry (only when sacred > 0.20)
+6. Pixelated figure (small, 16–32px sprite, data-driven state)
+
+**Grain overlay:** Applied via CSS on top of canvas, not baked into canvas rendering.
+
+## The Pixelated Figure
+Woody's visual signature. Small (16–32px) pixel art sprite — dancing (high energy), drifting (low energy), running (mid energy + high density). Moves in sync with acoustic data, same data as geometry. NOT hand-coded OR() rectangle blocks — use actual sprite assets (PixelLab or equivalent). OR() at S>4 produces "Minecraft character" appearance — rejected.
+
+## State Transitions
+- Acoustic coordinate changes → field reconfigures over 2–4 seconds, not instant
+- Track changes: field breathes through the transition
+- No hard cuts, no generic "loading" animations while music is active
+
+## What the Acoustic Field Is NOT
+- Not a waveform or spectrum analyzer
+- Not pulsing logo or EQ bars
+- Not a generic particle system
+- Not a visualizer "bolted onto" a player — **the field IS the player**
+- Not reactive to button presses (only to acoustic data)
+
+## Now Playing Screen (canonical)
+- Acoustic field fills the screen — not a player with visualizer added
+- Track info: small bottom overlay, Epilogue 300, `--moon`, dim
+- Arc progress: thin horizontal bar at bottom
+- Soft pause button: minimal, triggers graceful ending sequence, not hard stop
+- Nothing else on this screen. No nav. No clutter.
