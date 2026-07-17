@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,9 +16,10 @@ const SCOPES = [
   'user-read-recently-played',
 ].join(' ')
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const clientId = process.env.SPOTIFY_CLIENT_ID?.trim()
   const redirectUri = process.env.SPOTIFY_REDIRECT_URI?.trim()
+  const authAppUrl = process.env.AUTH_APP_URL?.trim()
   if (!clientId || !redirectUri) {
     return new NextResponse(
       [
@@ -29,6 +30,18 @@ export async function GET() {
       ].join('\n'),
       { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
     )
+  }
+
+  if (authAppUrl) {
+    let canonicalOrigin: string
+    try {
+      canonicalOrigin = new URL(authAppUrl).origin
+    } catch {
+      return new NextResponse('Spotify login is misconfigured: AUTH_APP_URL is invalid.', { status: 503 })
+    }
+    if (request.nextUrl.origin !== canonicalOrigin) {
+      return NextResponse.redirect(new URL('/api/auth/login', canonicalOrigin))
+    }
   }
 
   const state = randomBytes(32).toString('base64url')

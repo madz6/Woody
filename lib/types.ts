@@ -306,6 +306,12 @@ export interface JourneyAnchor {
   attribution: JourneyAttribution[]
 }
 
+export interface JourneyAnchorSignal {
+  field: string
+  text: string
+  source: AttributionProvenance
+}
+
 export interface JourneyPhase {
   id: string
   type: JourneyPhaseType
@@ -339,11 +345,13 @@ export interface JourneyPlanV1 {
 }
 
 export interface JourneyTransitionDiagnostics {
-  transitionDistance: number
+  selectionMode: 'coherent' | 'target_only'
+  currentEmbeddingAvailable: boolean
+  transitionDistance: number | null
   targetDistance: number
   familiarityFit: number
   skipPenalty: number
-  relaxationLevel: number
+  relaxationLevel: number | null
   candidateCount: number
   latencyMs: number
 }
@@ -355,6 +363,23 @@ export interface JourneyDecision {
   knownness: Knownness
   confidence: number
   diagnostics: JourneyTransitionDiagnostics
+  steerId?: string
+}
+
+export type JourneySteerKind = 'impact_soon' | 'hold_phase' | 'advance_phase' | 'change_direction'
+export type JourneySteerScope = 'next_track' | 'next_two_tracks' | 'rest_of_journey'
+
+export interface JourneySteerV1 {
+  version: 1
+  id: string
+  createdAt: string
+  kind: JourneySteerKind
+  scope: JourneySteerScope
+  text?: string
+  source: 'tap' | 'text' | 'voice_local'
+  status: 'pending' | 'applied' | 'superseded' | 'reverted'
+  remainingDecisions?: number
+  appliedDecisionId?: string
 }
 
 export type JourneyEventType =
@@ -365,6 +390,10 @@ export type JourneyEventType =
   | 'user_override'
   | 'queue_added'
   | 'queue_paused'
+  | 'steer_requested'
+  | 'steer_applied'
+  | 'steer_superseded'
+  | 'steer_reverted'
   | 'session_ended'
   | 'explicit_approval'
   | 'explicit_rejection'
@@ -399,6 +428,7 @@ export interface JourneySessionV1 {
   playedTrackIds: string[]
   rejectedTrackIds: string[]
   skipPenalties: JourneySkipPenalty[]
+  steers: JourneySteerV1[]
   startedAt?: string
   endedAt?: string
   review?: JourneyRunReview

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
   JourneyAnchor,
+  JourneyAnchorSignal,
   JourneyAttribution,
   JourneyPlanV1,
   JourneySessionMode,
@@ -22,6 +23,32 @@ export interface JourneyPlanInput {
   intent: string
   durationMinutes: number
   anchors: Array<{ track: Track; role: 'opener' | 'reference'; note: string }>
+}
+
+export function journeyAnchorSignals(anchors: JourneyAnchor[]): JourneyAnchorSignal[] {
+  return anchors.flatMap((anchor) => {
+    const signals: JourneyAnchorSignal[] = []
+    if (anchor.note.trim()) {
+      signals.push({ field: 'anchor.note', text: anchor.note.trim(), source: 'user_text' })
+    }
+    for (const category of TAG_CATEGORIES) {
+      const confirmed = anchor.confirmedTags[category] ?? []
+      const confirmedSet = new Set(confirmed)
+      for (const value of confirmed) {
+        signals.push({ field: `anchor.tags.${category}`, text: value, source: 'user_confirmed' })
+      }
+      for (const value of anchor.suggestedTags[category] ?? []) {
+        if (confirmedSet.has(value)) continue
+        const recorded = anchor.attribution.find((item) => item.field === `anchor.tags.${category}` && item.value === value)
+        signals.push({
+          field: `anchor.tags.${category}`,
+          text: value,
+          source: recorded?.source === 'system_inferred' ? 'system_inferred' : 'model_suggested',
+        })
+      }
+    }
+    return signals
+  })
 }
 
 function text(value: unknown, maxLength: number): string | null {

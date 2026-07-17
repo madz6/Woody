@@ -5,6 +5,10 @@ import { spotifyFetch } from '@/lib/auth/spotifySession'
 type SpotifyTrack = { id?: string; artists?: Array<{ name?: string }> }
 
 export async function GET() {
+  if (process.env.WOODY_SPOTIFY_PERSONALIZATION !== 'true') {
+    return NextResponse.json({ knownTrackIds: [], knownArtists: [], enabled: false })
+  }
+
   try {
     const savedRequests = [0, 50, 100, 150].map((offset) =>
       spotifyFetch(`/me/tracks?limit=50&offset=${offset}`),
@@ -28,7 +32,7 @@ export async function GET() {
       if (track.id) trackIds.add(track.id)
       for (const artist of track.artists ?? []) if (artist.name) artists.add(artist.name)
     }
-    return NextResponse.json({ knownTrackIds: [...trackIds], knownArtists: [...artists] })
+    return NextResponse.json({ knownTrackIds: [...trackIds], knownArtists: [...artists], enabled: true })
   } catch (error) {
     return apiError(error, 'spotify_context_failed')
   }

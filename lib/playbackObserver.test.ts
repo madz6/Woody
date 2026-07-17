@@ -46,4 +46,19 @@ describe('playback event reducer', () => {
     expect(result.events.some((event) => event.eventType === 'user_override')).toBe(false)
     expect(result.state.pausedForOverride).toBe(false)
   })
+
+  it('records an expected Cut now transition as user initiated', () => {
+    let state = initialPlaybackObserver('adaptive')
+    state = reducePlaybackObservation(state, observed(first, 50_000)).state
+    const result = reducePlaybackObservation({
+      ...state,
+      expectedTrackId: next.id,
+      expectedDecisionId: 'decision-cut',
+      expectedInitiatingSource: 'user',
+    }, observed(next, 0))
+    expect(result.events[0].eventType).toBe('manual_transition')
+    expect(result.events[0].initiatingSource).toBe('user')
+    expect(result.events[1].initiatingSource).toBe('user')
+    expect(result.overrideTrack).toBeUndefined()
+  })
 })

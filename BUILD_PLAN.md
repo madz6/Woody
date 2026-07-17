@@ -38,6 +38,8 @@ todos:
 isProject: false
 ---
 
+> **Archived preview-era plan.** This document preserves the original CLAP arc-engine build history and is not the current Journey V0 operating plan. Do not execute its Spotify `preview_url` hard gate for the mobile Journey. Current behavior and validation live in `README.md`; preview/iTunes routes are legacy research tooling only.
+
 # Woody — CLAP Arc Engine Build Plan
 
 ## Premise

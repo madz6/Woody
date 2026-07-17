@@ -16,6 +16,7 @@ import {
   saveJourneySession,
 } from '@/lib/journeyStorage'
 import { renderJourneyRunPrint, shareJourneyRunPrint } from '@/lib/journeyRunPrint'
+import { journeyAnchorSignals } from '@/lib/journey'
 import type {
   JourneyDecision,
   JourneyPhaseType,
@@ -23,6 +24,9 @@ import type {
   JourneyRunReview,
   JourneySessionMode,
   JourneySessionV1,
+  JourneySteerKind,
+  JourneySteerScope,
+  JourneySteerV1,
   JourneyTagCategory,
   Track,
 } from '@/lib/types'
@@ -83,6 +87,20 @@ function phaseFor(plan: JourneyPlanV1, startedAt: string): { type: JourneyPhaseT
   return { type: phase?.type ?? 'sustain', description: phase?.description ?? plan.intent }
 }
 
+function steeredPhase(plan: JourneyPlanV1, startedAt: string, steer: JourneySteerV1 | null): { type: JourneyPhaseType; description: string } {
+  const current = phaseFor(plan, startedAt)
+  if (!steer) return current
+  if (steer.kind === 'impact_soon') return { type: 'impact', description: 'Bring a clear, salient impact forward without abandoning the journey character.' }
+  if (steer.kind === 'hold_phase') return current
+  if (steer.kind === 'advance_phase') {
+    const phases = plan.phases.filter((phase) => phase.accepted)
+    const index = phases.findIndex((phase) => phase.type === current.type)
+    const next = phases[Math.min(phases.length - 1, Math.max(0, index + 1))]
+    return { type: next?.type ?? current.type, description: next?.description ?? current.description }
+  }
+  return steer.text ? { ...current, description: `${current.description} New direction from the user: ${steer.text}` } : current
+}
+
 function fraction(progressMs = 0, durationMs = 0): number {
   return durationMs > 0 ? Math.max(0, Math.min(1, progressMs / durationMs)) : 0
 }
@@ -135,11 +153,21 @@ export function JourneyApp() {
   const [runPrint, setRunPrint] = useState<Blob | null>(null)
   const [shareStatus, setShareStatus] = useState('')
   const [reviewAnswers, setReviewAnswers] = useState<ReviewAnswerKey[]>([])
+  const [steerOpen, setSteerOpen] = useState(false)
+  const [steerText, setSteerText] = useState('')
+  const [steerVariant, setSteerVariant] = useState<'orb' | 'sheet'>('orb')
+  const [steerTiming, setSteerTiming] = useState<'next' | 'now'>('next')
+  const [directionScope, setDirectionScope] = useState<JourneySteerScope>('rest_of_journey')
+  const [draftReady, setDraftReady] = useState(false)
 
   const sessionRef = useRef<JourneySessionV1 | null>(null)
   const observerRef = useRef<PlaybackObserverState>(initialPlaybackObserver(mode))
   const pendingDecisionRef = useRef<JourneyDecision | null>(null)
+  const draftDecisionRef = useRef<JourneyDecision | null>(null)
+  const draftGenerationRef = useRef(0)
+  const activeSteerRef = useRef<JourneySteerV1 | null>(null)
   const selectingRef = useRef(false)
+  const committingRef = useRef(false)
   const pollBlockedUntilRef = useRef(0)
   const contextRef = useRef<{ knownTrackIds: string[]; knownArtists: string[] }>({ knownTrackIds: [], knownArtists: [] })
   const wakeLockRef = useRef<{ release(): Promise<void>; addEventListener(type: string, listener: () => void): void } | null>(null)
@@ -278,40 +306,10 @@ export function JourneyApp() {
       contextRef.current = await api<{ knownTrackIds: string[]; knownArtists: string[] }>('/api/spotify/context')
         .catch(() => ({ knownTrackIds: [], knownArtists: [] }))
 
-      const acceptedPlan: JourneyPlanV1 = {
-        ...plan,
-        anchors: plan.anchors.map((anchor) => ({
-          ...anchor,
-          confirmedTags: Object.keys(anchor.confirmedTags).length > 0 ? anchor.confirmedTags : anchor.suggestedTags,
-          attribution: [
-            ...anchor.attribution,
-            ...Object.entries(Object.keys(anchor.confirmedTags).length > 0 ? anchor.confirmedTags : anchor.suggestedTags)
-              .flatMap(([category, values]) => (values ?? []).map((value) => ({
-                field: `anchor.tags.${category}`,
-                value,
-                source: 'user_confirmed' as const,
-                recordedAt: new Date().toISOString(),
-              }))),
-          ],
-        })),
-      }
+      const acceptedPlan = plan
       setPlan(acceptedPlan)
       if (acceptedPlan.mode === 'adaptive') {
-        setStatus('Preparing anchor audio…')
-        for (const anchor of acceptedPlan.anchors) {
-          setStatus(`Listening to ${anchor.track.name}…`)
-          try {
-            await post('/api/journey/anchor', { track: anchor.track })
-          } catch (anchorError) {
-            if (anchorError instanceof ClientApiError && anchorError.message === 'anchor_audio_unavailable') {
-              throw new Error(`Woody could not find usable preview audio for “${anchor.track.name}”. Try another version of this track or choose a different anchor.`)
-            }
-            if (anchorError instanceof ClientApiError && anchorError.message === 'anchor_embedding_timeout') {
-              throw new Error(`Preparing “${anchor.track.name}” took too long. Wait a moment for Woody to wake up, then retry.`)
-            }
-            throw anchorError
-          }
-        }
+        setStatus('Tuning the journey…')
         const opener = acceptedPlan.anchors.find((anchor) => anchor.role === 'opener')!
         await post('/api/player/play', { uri: opener.track.spotifyUri ?? `spotify:track:${opener.track.id}`, deviceId: activeDevice.id })
       }
@@ -325,10 +323,14 @@ export function JourneyApp() {
         playedTrackIds: [],
         rejectedTrackIds: [],
         skipPenalties: [],
+        steers: [],
         startedAt: now,
       }
       observerRef.current = initialPlaybackObserver(acceptedPlan.mode)
       pendingDecisionRef.current = null
+      draftDecisionRef.current = null
+      activeSteerRef.current = null
+      setDraftReady(false)
       commitSession(next)
       setStage('active')
       setStatus(acceptedPlan.mode === 'adaptive' ? 'Woody is observing Spotify and keeping one track queued.' : 'Control run: Woody is observing only.')
@@ -343,17 +345,26 @@ export function JourneyApp() {
     }
   }
 
-  const queueNext = useCallback(async (currentTrack: Track) => {
+  const draftNext = useCallback(async (currentTrack: Track, steerOverride?: JourneySteerV1 | null) => {
     const current = sessionRef.current
-    if (!current || current.status !== 'active' || current.plan.mode !== 'adaptive' || selectingRef.current || pendingDecisionRef.current) return
+    if (!current || current.status !== 'active' || current.plan.mode !== 'adaptive' || selectingRef.current || pendingDecisionRef.current || draftDecisionRef.current) return
     selectingRef.current = true
+    const generation = draftGenerationRef.current
     try {
-      const activePhase = phaseFor(current.plan, current.startedAt ?? new Date().toISOString())
-      const decision = await post<JourneyDecision>('/api/journey/next', {
+      const steer = steerOverride === undefined ? activeSteerRef.current : steerOverride
+      const activePhase = steeredPhase(current.plan, current.startedAt ?? new Date().toISOString(), steer)
+      const selected = await post<JourneyDecision>('/api/journey/next', {
         sessionId: current.plan.sessionId,
         decisionIndex: current.decisions.length,
         currentTrackId: currentTrack.id,
+        currentTrackArtist: currentTrack.artist,
         anchorTrackIds: current.plan.anchors.map((anchor) => anchor.track.id),
+        anchorSignals: [
+          ...journeyAnchorSignals(current.plan.anchors),
+          ...(steer?.kind === 'change_direction' && steer.text
+            ? [{ field: 'steer.direction', text: steer.text, source: 'user_text' as const }]
+            : []),
+        ],
         phase: activePhase.type,
         phaseDescription: activePhase.description,
         familiarityTarget: current.plan.familiarityTarget,
@@ -363,29 +374,12 @@ export function JourneyApp() {
         excludeIds: [...new Set([...current.playedTrackIds, ...current.rejectedTrackIds])],
         skipPenalties: current.skipPenalties,
       })
-      await post('/api/player/queue', { uri: decision.selectedTrack.spotifyUri ?? `spotify:track:${decision.selectedTrack.id}` })
-      pendingDecisionRef.current = decision
-      observerRef.current = {
-        ...observerRef.current,
-        expectedTrackId: decision.selectedTrack.id,
-        expectedDecisionId: decision.decisionId,
-      }
-      const next: JourneySessionV1 = {
-        ...current,
-        decisions: [...current.decisions, decision],
-        skipPenalties: current.skipPenalties
-          .map((penalty) => ({ ...penalty, decisionsRemaining: penalty.decisionsRemaining - 1 }))
-          .filter((penalty) => penalty.decisionsRemaining > 0),
-        events: [...current.events, {
-          version: 1,
-          timestamp: new Date().toISOString(),
-          eventType: 'queue_added',
-          track: decision.selectedTrack,
-          initiatingSource: 'woody',
-          decisionId: decision.decisionId,
-        }],
-      }
-      commitSession(next)
+      if (generation !== draftGenerationRef.current) return
+      const decision = { ...selected, ...(steer ? { steerId: steer.id } : {}) }
+      draftDecisionRef.current = decision
+      setDraftReady(true)
+      setStatus(steer ? 'Direction received. The next transition has changed.' : 'The next transition is shaped and waiting.')
+      return decision
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : 'selection_failed'
       setError(message)
@@ -401,6 +395,63 @@ export function JourneyApp() {
       })
     } finally {
       selectingRef.current = false
+    }
+  }, [commitSession])
+
+  const commitDraft = useCallback(async (cutNow = false) => {
+    const current = sessionRef.current
+    const decision = draftDecisionRef.current
+    if (!current || !decision || pendingDecisionRef.current || committingRef.current) return
+    committingRef.current = true
+    try {
+      const uri = decision.selectedTrack.spotifyUri ?? `spotify:track:${decision.selectedTrack.id}`
+      await post(cutNow ? '/api/player/play' : '/api/player/queue', { uri })
+      pendingDecisionRef.current = decision
+      draftDecisionRef.current = null
+      setDraftReady(false)
+      observerRef.current = {
+        ...observerRef.current,
+        expectedTrackId: decision.selectedTrack.id,
+        expectedDecisionId: decision.decisionId,
+        expectedInitiatingSource: cutNow ? 'user' : 'woody',
+      }
+      const steer = decision.steerId ? current.steers.find((item) => item.id === decision.steerId) : undefined
+      let appliedSteer = steer
+      if (steer) {
+        const remainingDecisions = steer.scope === 'next_two_tracks' ? Math.max(0, (steer.remainingDecisions ?? 2) - 1) : steer.remainingDecisions
+        appliedSteer = { ...steer, status: 'applied', remainingDecisions, appliedDecisionId: decision.decisionId }
+        if (steer.scope === 'next_track' || remainingDecisions === 0) activeSteerRef.current = null
+        else activeSteerRef.current = appliedSteer
+      }
+      const next: JourneySessionV1 = {
+        ...current,
+        decisions: [...current.decisions, decision],
+        steers: steer ? current.steers.map((item) => item.id === steer.id ? appliedSteer! : item) : current.steers,
+        skipPenalties: current.skipPenalties
+          .map((penalty) => ({ ...penalty, decisionsRemaining: penalty.decisionsRemaining - 1 }))
+          .filter((penalty) => penalty.decisionsRemaining > 0),
+        events: [...current.events, ...(!cutNow ? [{
+          version: 1 as const,
+          timestamp: new Date().toISOString(),
+          eventType: 'queue_added' as const,
+          track: decision.selectedTrack,
+          initiatingSource: 'woody' as const,
+          decisionId: decision.decisionId,
+        }] : []), ...(steer ? [{
+          version: 1 as const,
+          timestamp: new Date().toISOString(),
+          eventType: 'steer_applied' as const,
+          track: decision.selectedTrack,
+          initiatingSource: 'user' as const,
+          decisionId: decision.decisionId,
+        }] : [])],
+      }
+      commitSession(next)
+      setStatus(cutNow ? 'Direction changed now.' : 'The next transition is committed.')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'queue_failed')
+    } finally {
+      committingRef.current = false
     }
   }, [commitSession])
 
@@ -421,7 +472,7 @@ export function JourneyApp() {
       observerRef.current = reduction.state
       if (reduction.consumedExpectedDecision) {
         pendingDecisionRef.current = null
-        observerRef.current = { ...observerRef.current, expectedTrackId: null, expectedDecisionId: null }
+        observerRef.current = { ...observerRef.current, expectedTrackId: null, expectedDecisionId: null, expectedInitiatingSource: null }
       }
       const latest = sessionRef.current ?? current
       const skipPenalties = reduction.skipSignal
@@ -448,7 +499,11 @@ export function JourneyApp() {
         setStatus('Automation paused because Spotify moved somewhere unexpected.')
         return
       }
-      if (next.status === 'active') void queueNext(state.track)
+      if (next.status === 'active') {
+        const remainingMs = Math.max(0, state.track.durationMs - (state.progressMs ?? 0))
+        if (draftDecisionRef.current && !pendingDecisionRef.current && remainingMs <= 15_000) void commitDraft()
+        else if (!draftDecisionRef.current && !pendingDecisionRef.current) void draftNext(state.track)
+      }
     } catch (caught) {
       if (caught instanceof ClientApiError && caught.message === 'spotify_rate_limited') {
         pollBlockedUntilRef.current = Date.now() + (caught.retryAfterSeconds ?? 5) * 1000
@@ -457,7 +512,7 @@ export function JourneyApp() {
         setStatus('Playback observation temporarily unavailable. Retrying…')
       }
     }
-  }, [commitSession, queueNext])
+  }, [commitDraft, commitSession, draftNext])
 
   useEffect(() => {
     if (stage !== 'active') return
@@ -469,12 +524,104 @@ export function JourneyApp() {
     }
   }, [pollPlayback, stage])
 
+  const requestSteer = async (kind: JourneySteerKind, scope: JourneySteerScope = 'next_track') => {
+    const current = sessionRef.current
+    const currentTrack = player?.track
+    if (!current || current.status !== 'active' || !currentTrack || current.plan.mode !== 'adaptive') return
+    const now = new Date().toISOString()
+    const steer: JourneySteerV1 = {
+      version: 1,
+      id: crypto.randomUUID(),
+      createdAt: now,
+      kind,
+      scope,
+      ...(kind === 'change_direction' && steerText.trim() ? { text: steerText.trim() } : {}),
+      source: kind === 'change_direction' ? 'text' : 'tap',
+      status: 'pending',
+      ...(scope === 'next_two_tracks' ? { remainingDecisions: 2 } : {}),
+    }
+    if (kind === 'change_direction' && !steer.text) {
+      setError('Give Woody a short direction first.')
+      return
+    }
+    const previous = activeSteerRef.current
+    activeSteerRef.current = steer
+    draftGenerationRef.current += 1
+    draftDecisionRef.current = null
+    setDraftReady(false)
+    const next: JourneySessionV1 = {
+      ...current,
+      steers: [
+        ...current.steers.map((item) => previous && item.id === previous.id ? { ...item, status: 'superseded' as const } : item),
+        steer,
+      ],
+      events: [
+        ...current.events,
+        ...(previous ? [{
+          version: 1 as const,
+          timestamp: now,
+          eventType: 'steer_superseded' as const,
+          initiatingSource: 'user' as const,
+        }] : []),
+        {
+          version: 1,
+          timestamp: now,
+          eventType: 'steer_requested',
+          initiatingSource: 'user',
+          attribution: {
+            field: `steer.${kind}`,
+            value: steer.text ?? kind,
+            source: 'user_text',
+            recordedAt: now,
+          },
+        },
+      ],
+    }
+    commitSession(next)
+    setSteerOpen(false)
+    setSteerText('')
+    setError('')
+    const decision = await draftNext(currentTrack, steer)
+    if (decision && steerTiming === 'now') await commitDraft(true)
+  }
+
+  const revertPersistentSteer = () => {
+    const current = sessionRef.current
+    const steer = activeSteerRef.current
+    if (!current || !steer || steer.scope !== 'rest_of_journey') return
+    const now = new Date().toISOString()
+    activeSteerRef.current = null
+    draftGenerationRef.current += 1
+    draftDecisionRef.current = null
+    setDraftReady(false)
+    commitSession({
+      ...current,
+      steers: current.steers.map((item) => item.id === steer.id ? { ...item, status: 'reverted' as const } : item),
+      events: [...current.events, {
+        version: 1,
+        timestamp: now,
+        eventType: 'steer_reverted',
+        initiatingSource: 'user',
+        attribution: {
+          field: 'steer.reverted',
+          value: steer.text ?? steer.kind,
+          source: 'user_text',
+          recordedAt: now,
+        },
+      }],
+    })
+    setSteerOpen(false)
+    setStatus(pendingDecisionRef.current
+      ? 'Original journey restored after the committed next track.'
+      : 'Original journey restored.')
+    if (player?.track && !pendingDecisionRef.current) void draftNext(player.track, null)
+  }
+
   const resumeFromOverride = async () => {
     const current = sessionRef.current
     if (!current || !overrideTrack) return
     setBusy(true)
     try {
-      await post('/api/journey/anchor', { track: overrideTrack })
       const opener = current.plan.anchors.find((anchor) => anchor.role === 'opener')
       const references = current.plan.anchors.filter((anchor) => anchor.role === 'reference' && anchor.track.id !== overrideTrack.id).slice(0, 1)
       const resumedAnchors = [...(opener ? [opener] : []), ...references, {
@@ -495,12 +642,15 @@ export function JourneyApp() {
         status: 'active' as const,
         plan: { ...current.plan, anchors: resumedAnchors },
       }
-      observerRef.current = { ...observerRef.current, pausedForOverride: false, expectedTrackId: null, expectedDecisionId: null }
+      observerRef.current = { ...observerRef.current, pausedForOverride: false, expectedTrackId: null, expectedDecisionId: null, expectedInitiatingSource: null }
       pendingDecisionRef.current = null
+      draftDecisionRef.current = null
+      draftGenerationRef.current += 1
+      setDraftReady(false)
       setOverrideTrack(null)
       commitSession(next)
       setStatus('Resumed from the track you chose.')
-      void queueNext(overrideTrack)
+      void draftNext(overrideTrack)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'resume_failed')
     } finally {
@@ -575,6 +725,9 @@ export function JourneyApp() {
   }
 
   const reviewTrack = session ? [...session.events].reverse().find((event) => event.track)?.track : null
+  const activePersistentSteer = session?.steers.findLast((steer) =>
+    steer.scope === 'rest_of_journey' && (steer.status === 'pending' || steer.status === 'applied'),
+  )
   const interventionCount = session?.events.filter((event) => event.eventType === 'manual_transition' || event.eventType === 'user_override').length ?? 0
   const impactMinute = session?.plan.impactWindows.find((window) => window.enabled)?.minute
 
@@ -630,7 +783,7 @@ export function JourneyApp() {
               <svg viewBox="0 0 340 170" aria-hidden="true"><path d="M12 145C45 126 56 73 104 89s55-61 104-37 58 70 120 5" />{plan.phases.filter((phase) => phase.accepted).slice(0, 4).map((phase, index) => <circle key={phase.id} cx={[12,104,208,328][index]} cy={[145,89,52,57][index]} r="5" />)}</svg>
               <div>{plan.phases.filter((phase) => phase.accepted).slice(0, 4).map((phase) => <span key={phase.id}>{phase.label}</span>)}</div>
             </section>
-            <section className="journey-editor-group"><div className="journey-section-heading"><div><span>PHASES</span><h2>How it moves</h2></div></div>{plan.phases.map((phase, index) => <details className="phase-editor" key={phase.id}><summary><input aria-label={`Use ${phase.label} phase`} type="checkbox" checked={phase.accepted} onClick={(event) => event.stopPropagation()} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, accepted: event.target.checked } : item) })} /><span><strong>{phase.label}</strong><small>{phase.startMinute}–{phase.endMinute} min</small></span><i>+</i></summary><textarea aria-label={`${phase.label} description`} value={phase.description} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item) })} /></details>)}</section>
+            <details className="journey-editor-group journey-preview-tune"><summary><span><small>OPTIONAL DETAIL</small><strong>Fine-tune the phases</strong></span><i>+</i></summary><div>{plan.phases.map((phase, index) => <details className="phase-editor" key={phase.id}><summary><input aria-label={`Use ${phase.label} phase`} type="checkbox" checked={phase.accepted} onClick={(event) => event.stopPropagation()} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, accepted: event.target.checked } : item) })} /><span><strong>{phase.label}</strong><small>{phase.startMinute}–{phase.endMinute} min</small></span><i>+</i></summary><textarea aria-label={`${phase.label} description`} value={phase.description} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item) })} /></details>)}</div></details>
             <section className="journey-balance"><div><span>FAMILIAR GROUND</span><strong>{Math.round(plan.familiarityTarget * 100)}<small> / {100 - Math.round(plan.familiarityTarget * 100)} discovery</small></strong></div><input aria-label="Familiarity balance" type="range" min="0" max="100" value={Math.round(plan.familiarityTarget * 100)} onChange={(event) => setPlan({ ...plan, familiarityTarget: Number(event.target.value) / 100 })} /></section>
             <section className="journey-impact"><div className="journey-section-heading"><div><span>IMPACT WINDOWS</span><h2>Moments with weight</h2></div></div><p>Proposed moments of salience—not measured dopamine.</p>{plan.impactWindows.map((window, index) => <label key={window.id}><input type="checkbox" checked={window.enabled} onChange={(event) => setPlan({ ...plan, impactWindows: plan.impactWindows.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: event.target.checked } : item) })} /><span>around</span><input aria-label="Impact minute" type="number" min="1" max={plan.durationMinutes - 1} value={window.minute} onChange={(event) => setPlan({ ...plan, impactWindows: plan.impactWindows.map((item, itemIndex) => itemIndex === index ? { ...item, minute: Number(event.target.value) } : item) })} /><strong>min</strong></label>)}</section>
             <details className="journey-tags"><summary><span><small>OPTIONAL DETAIL</small><strong>Fine-tune what Woody heard</strong></span><i>+</i></summary>{plan.anchors.map((anchor, anchorIndex) => <article key={anchor.track.id}><h3>{anchor.track.name}</h3>{TAG_CATEGORIES.map((category) => <label key={category}><span>{category}</span><input value={(anchor.confirmedTags[category] ?? anchor.suggestedTags[category] ?? []).join(', ')} onChange={(event) => updateTag(anchorIndex, category, event.target.value)} /></label>)}</article>)}</details>
@@ -643,7 +796,21 @@ export function JourneyApp() {
             <div className="journey-live"><span className="live-pulse" /><span>{session.status === 'paused_override' ? 'PAUSED FOR YOU' : session.plan.mode === 'adaptive' ? 'WOODY IS MOVING' : 'WOODY IS LISTENING'}</span></div>
             <div className="now-artwork">{player?.track?.albumArt ? <Image src={player.track.albumArt} alt={`${player.track.name} artwork`} width={640} height={640} unoptimized priority /> : <div className="now-artwork-empty" />}<JourneySignal mode={session.plan.mode} /></div>
             <div className="now-copy"><span>NOW PLAYING</span><h1>{player?.track?.name ?? 'Waiting for Spotify…'}</h1><p>{player?.track?.artist ?? 'Open Spotify and start playback'}</p>{player?.track && <div className="progress-track"><i style={{ width: `${fraction(player.progressMs, player.track.durationMs) * 100}%` }} /></div>}</div>
-            <div className="journey-observation" aria-live="polite"><span className="observation-orbit" /><p><strong>{session.plan.mode === 'adaptive' ? 'One decision ahead' : 'Observation only'}</strong><small>{status || 'Headphone, Watch, and phone changes are observed automatically.'}</small></p></div>
+            <div className="journey-observation" aria-live="polite"><span className="observation-orbit" /><p><strong>{session.plan.mode === 'adaptive' ? draftReady ? 'Next move shaped' : 'One decision ahead' : 'Observation only'}</strong><small>{status || 'Headphone, Watch, and phone changes are observed automatically.'}</small></p></div>
+            {session.plan.mode === 'adaptive' && !overrideTrack && <>
+              <button className="journey-steer-trigger" onClick={() => setSteerOpen(true)}><span>STEER</span><i>↗</i></button>
+              {steerOpen && <motion.aside className={`journey-steer-panel journey-steer-${steerVariant}`} initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}>
+                <div className="journey-steer-heading"><span>STEER THE JOURNEY</span><button onClick={() => setSteerOpen(false)} aria-label="Close steering">×</button></div>
+                {process.env.NODE_ENV === 'development' && <div className="steer-variant-switch"><button className={steerVariant === 'orb' ? 'active' : ''} onClick={() => setSteerVariant('orb')}>Orb</button><button className={steerVariant === 'sheet' ? 'active' : ''} onClick={() => setSteerVariant('sheet')}>Sheet</button></div>}
+                <div className="steer-timing"><button className={steerTiming === 'next' ? 'active' : ''} onClick={() => setSteerTiming('next')}>NEXT TRACK</button><button className={steerTiming === 'now' ? 'active' : ''} onClick={() => setSteerTiming('now')}>CUT NOW</button></div>
+                <div className="steer-actions">
+                  <button onClick={() => void requestSteer('impact_soon')}><i>»</i><span>Bring impact forward</span></button>
+                  <button onClick={() => void requestSteer('hold_phase')}><i>Ⅱ</i><span>Stay here</span></button>
+                  <button onClick={() => void requestSteer('advance_phase')}><i>›</i><span>Move on</span></button>
+                </div>
+                <div className="steer-direction"><label><span>CHANGE DIRECTION</span><input value={steerText} onChange={(event) => setSteerText(event.target.value)} placeholder="Darker, stranger, more open…" maxLength={240} /></label><div><button className={directionScope === 'rest_of_journey' ? 'active' : ''} onClick={() => setDirectionScope('rest_of_journey')}>Rest of run</button><button className={directionScope === 'next_two_tracks' ? 'active' : ''} onClick={() => setDirectionScope('next_two_tracks')}>Short detour</button></div><button className="steer-direction-apply" onClick={() => void requestSteer('change_direction', directionScope)}>Apply direction</button>{activePersistentSteer && <button className="steer-direction-revert" onClick={revertPersistentSteer}>Return to original journey</button>}</div>
+              </motion.aside>}
+            </>}
             {overrideTrack && <motion.aside className="journey-override" initial={{ y: '100%' }} animate={{ y: 0 }}><span>YOU CHANGED DIRECTION</span><h2>Woody stopped rather than fighting you.</h2><p>Continue from <strong>{overrideTrack.name}</strong>, or finish here.</p><button className="journey-button journey-button-primary" disabled={busy} onClick={() => void resumeFromOverride()}>Follow this direction</button><button className="journey-button journey-button-quiet" onClick={endJourney}>End the run</button></motion.aside>}
             {!overrideTrack && <button className="journey-end" onClick={endJourney}>End run</button>}
           </motion.section>

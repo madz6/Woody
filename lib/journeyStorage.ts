@@ -32,7 +32,7 @@ export function parseStoredJourneys(raw: string | null): StoredJourneysV1 {
         if (!session || typeof session !== 'object') return false
         const item = session as Record<string, unknown>
         return item.version === 1 && typeof item.plan === 'object' && Array.isArray(item.events)
-      }).slice(0, MAX_SESSIONS),
+      }).map((session) => ({ ...session, steers: Array.isArray(session.steers) ? session.steers : [] })).slice(0, MAX_SESSIONS),
     }
   } catch {
     return { version: 1, sessions: [] }

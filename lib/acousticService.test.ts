@@ -15,6 +15,8 @@ describe('journey acoustic-service contract', () => {
       track: { id: 'next', name: 'Next', artist: 'Artist', spotify_uri: 'spotify:track:next', knownness: 'unseen' },
       phase: 'impact',
       confidence: 0.8,
+      selection_mode: 'coherent',
+      current_embedding_available: true,
       transition_distance: 0.2,
       target_distance: 0.1,
       familiarity_fit: 0.3,
@@ -29,7 +31,9 @@ describe('journey acoustic-service contract', () => {
       sessionId: 'session',
       decisionIndex: 2,
       currentTrackId: 'current',
+      currentTrackArtist: 'Current Artist',
       anchorTrackIds: ['anchor'],
+      anchorSignals: [{ field: 'anchor.note', text: 'hold the tension', source: 'user_text' }],
       phase: 'impact',
       phaseDescription: 'arrive clearly',
       familiarityTarget: 0.65,
@@ -43,11 +47,12 @@ describe('journey acoustic-service contract', () => {
     const sent = JSON.parse(String(init.body))
     expect(init.headers.Authorization).toBe('Bearer service-secret')
     expect(sent.skip_penalties[0]).toEqual({ track_id: 'skipped', weight: 0.75, decisions_remaining: 3 })
+    expect(sent.anchor_signals[0]).toEqual({ field: 'anchor.note', text: 'hold the tension', source: 'user_text' })
     expect(decision.relaxationLevel).toBe(1)
     expect(decision.track.spotifyUri).toBe('spotify:track:next')
   })
 
-  it('preserves Spotify preview audio when ensuring an anchor', async () => {
+  it('never forwards Spotify preview audio when checking an anchor', async () => {
     vi.stubEnv('ACOUSTIC_SERVICE_URL', 'https://acoustic.example')
     vi.stubEnv('ACOUSTIC_SERVICE_TOKEN', 'service-secret')
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
@@ -65,6 +70,6 @@ describe('journey acoustic-service contract', () => {
       previewUrl: 'https://p.scdn.co/example.mp3',
     })
     const [, init] = fetchMock.mock.calls[0]
-    expect(JSON.parse(String(init.body)).preview_url).toBe('https://p.scdn.co/example.mp3')
+    expect(JSON.parse(String(init.body))).not.toHaveProperty('preview_url')
   })
 })

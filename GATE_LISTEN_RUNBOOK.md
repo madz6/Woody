@@ -1,5 +1,7 @@
 # gate_listen — The One Runbook
 
+> **Archived preview-era runbook.** Keep this only for reproducing the original corpus listen test. It is not a prerequisite for Journey V0, which no longer fetches audio or requires preview availability at runtime. Use `README.md` for the current product contract and validation commands.
+
 *Created 2026-06-27. This is the only doc you need to run the listen test. Ignore SMOKE_TEST.md / the build plan for this — come back to them later. Goal: hear whether a generated arc sounds like a coherent journey, not shuffle. Everything in the project is downstream of this.*
 
 ---

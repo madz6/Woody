@@ -11,6 +11,7 @@ export interface PlaybackObserverState {
   previous: PlaybackObservation | null
   expectedTrackId: string | null
   expectedDecisionId: string | null
+  expectedInitiatingSource: 'woody' | 'user' | null
   currentDecisionId: string | null
   mode: JourneySessionMode
   pausedForOverride: boolean
@@ -40,6 +41,7 @@ export function initialPlaybackObserver(mode: JourneySessionMode): PlaybackObser
     previous: null,
     expectedTrackId: null,
     expectedDecisionId: null,
+    expectedInitiatingSource: null,
     currentDecisionId: null,
     mode,
     pausedForOverride: false,
@@ -69,7 +71,7 @@ export function reducePlaybackObservation(
         rawPositionMs: observation.progressMs,
         rawDurationMs: observation.track.durationMs,
         listenedFraction: fraction(observation),
-        initiatingSource: state.expectedTrackId === observation.track.id ? 'woody' : 'spotify',
+        initiatingSource: state.expectedTrackId === observation.track.id ? state.expectedInitiatingSource ?? 'woody' : 'spotify',
         decisionId: state.expectedDecisionId ?? undefined,
       }],
       consumedExpectedDecision: state.expectedTrackId === observation.track.id,
@@ -91,7 +93,7 @@ export function reducePlaybackObservation(
     rawPositionMs: state.previous.progressMs,
     rawDurationMs: state.previous.track.durationMs,
     listenedFraction,
-    initiatingSource: completed ? 'spotify' : 'user',
+    initiatingSource: completed ? 'spotify' : expected ? state.expectedInitiatingSource ?? 'woody' : 'user',
     decisionId: state.currentDecisionId ?? undefined,
   }
   const events: JourneyEventV1[] = [transitionEvent]
@@ -121,7 +123,7 @@ export function reducePlaybackObservation(
     rawPositionMs: observation.progressMs,
     rawDurationMs: observation.track.durationMs,
     listenedFraction: fraction(observation),
-    initiatingSource: expected ? 'woody' : 'user',
+    initiatingSource: expected ? state.expectedInitiatingSource ?? 'woody' : 'user',
     decisionId: expected ? state.expectedDecisionId ?? undefined : undefined,
   })
 
@@ -131,6 +133,7 @@ export function reducePlaybackObservation(
       previous: observation,
       expectedTrackId: expected ? null : state.expectedTrackId,
       expectedDecisionId: expected ? null : state.expectedDecisionId,
+      expectedInitiatingSource: expected ? null : state.expectedInitiatingSource,
       currentDecisionId: expected ? state.expectedDecisionId : null,
       pausedForOverride,
     },

@@ -7,10 +7,11 @@ import {
 } from '@/lib/acousticService'
 import { getSpotifyAccessToken, spotifyFetch } from '@/lib/auth/spotifySession'
 import { spotifyTrackToWoody } from '@/lib/spotify'
-import type { JourneyDecision } from '@/lib/types'
+import type { AttributionProvenance, JourneyDecision } from '@/lib/types'
 
 const PHASES = new Set<AcousticJourneyPhase>(['settle', 'build', 'sustain', 'impact', 'release'])
 const KNOWNNESS = new Set<AcousticKnownness>(['known_track', 'known_artist', 'unseen'])
+const PROVENANCE = new Set<AttributionProvenance>(['user_text', 'model_suggested', 'user_confirmed', 'behavior_observed', 'system_inferred'])
 
 function strings(value: unknown, max: number): string[] | null {
   if (!Array.isArray(value) || value.length > max || !value.every((item) => typeof item === 'string')) return null
@@ -24,7 +25,22 @@ export async function POST(request: NextRequest) {
     const sessionId = typeof body.sessionId === 'string' && body.sessionId.length <= 128 ? body.sessionId : null
     const decisionIndex = typeof body.decisionIndex === 'number' && Number.isInteger(body.decisionIndex) ? body.decisionIndex : null
     const currentTrackId = typeof body.currentTrackId === 'string' ? body.currentTrackId : null
+    const currentTrackArtist = typeof body.currentTrackArtist === 'string' && body.currentTrackArtist.trim().length <= 500
+      ? body.currentTrackArtist.trim()
+      : null
     const anchorTrackIds = strings(body.anchorTrackIds, 3)
+    const anchorSignals = Array.isArray(body.anchorSignals) && body.anchorSignals.length <= 100
+      ? body.anchorSignals.flatMap((candidate) => {
+          if (!candidate || typeof candidate !== 'object') return []
+          const item = candidate as Record<string, unknown>
+          if (
+            typeof item.field !== 'string' || item.field.length > 128
+            || typeof item.text !== 'string' || !item.text.trim() || item.text.trim().length > 500
+            || typeof item.source !== 'string' || !PROVENANCE.has(item.source as AttributionProvenance)
+          ) return []
+          return [{ field: item.field, text: item.text.trim(), source: item.source as AttributionProvenance }]
+        })
+      : null
     const phase = typeof body.phase === 'string' && PHASES.has(body.phase as AcousticJourneyPhase)
       ? body.phase as AcousticJourneyPhase
       : null
@@ -62,17 +78,20 @@ export async function POST(request: NextRequest) {
 
     if (
       !sessionId || decisionIndex === null || decisionIndex < 0 || decisionIndex > 1000
-      || !currentTrackId || !anchorTrackIds || anchorTrackIds.length < 1
+      || !currentTrackId || !currentTrackArtist || !anchorTrackIds || !anchorSignals
       || !phase || !phaseDescription || familiarityTarget === null
       || !knownTrackIds || !knownArtists || !recentKnownness || !excludeIds || !skipPenalties
       || skipPenalties.length !== (body.skipPenalties as unknown[]).length
+      || anchorSignals.length !== (body.anchorSignals as unknown[]).length
     ) return badRequest('invalid_journey_decision_request')
 
     const selected = await selectJourneyNext({
       sessionId,
       decisionIndex,
       currentTrackId,
+      currentTrackArtist,
       anchorTrackIds,
+      anchorSignals,
       phase,
       phaseDescription,
       familiarityTarget,
@@ -91,6 +110,8 @@ export async function POST(request: NextRequest) {
       knownness: selected.track.knownness,
       confidence: selected.confidence,
       diagnostics: {
+        selectionMode: selected.selectionMode,
+        currentEmbeddingAvailable: selected.currentEmbeddingAvailable,
         transitionDistance: selected.transitionDistance,
         targetDistance: selected.targetDistance,
         familiarityFit: selected.familiarityFit,

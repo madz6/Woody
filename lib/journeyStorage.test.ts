@@ -11,6 +11,7 @@ describe('journey storage migration boundary', () => {
     const valid = { version: 1, plan: { sessionId: 'one' }, events: [] }
     const parsed = parseStoredJourneys(JSON.stringify({ version: 1, sessions: [valid, { version: 1 }] }))
     expect(parsed.sessions).toHaveLength(1)
+    expect(parsed.sessions[0].steers).toEqual([])
   })
 })
 

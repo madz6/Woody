@@ -3,7 +3,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import numpy as np
 from fastapi import HTTPException
@@ -56,7 +56,9 @@ def request(**overrides):
         "session_id": "session",
         "decision_index": 0,
         "current_track_id": "current",
-        "anchor_track_ids": ["anchor"],
+        "current_track_artist": "Current Artist",
+        "anchor_track_ids": [],
+        "anchor_signals": [{"field": "anchor.note", "text": "steady tension", "source": "user_text"}],
         "phase": "sustain",
         "phase_description": "steady movement",
     }
@@ -78,6 +80,10 @@ class SelectorUnitTests(unittest.TestCase):
         impact = _decision_score(phase="impact", transition_distance=0.1, target_distance=0.5, familiarity_fit=0, skip_penalty=0)
         self.assertLess(sustain, impact)
 
+    def test_target_only_scoring_omits_transition_weight(self):
+        score = _decision_score(phase="impact", transition_distance=None, target_distance=0.25, familiarity_fit=0.5, skip_penalty=0)
+        self.assertAlmostEqual(score, 0.3)
+
     def test_knownness_balance(self):
         self.assertEqual(_knownness("known", "new", {"known"}, set()), "known_track")
         self.assertEqual(_knownness("new", "Artist", set(), {"artist"}), "known_artist")
@@ -97,28 +103,32 @@ class SelectorUnitTests(unittest.TestCase):
         self.assertEqual(selected["track_id"], "other")
         self.assertEqual(level, 2)
 
-    def test_missing_current_anchor_and_empty_corpus_fail_visibly(self):
+    def test_missing_current_uses_target_only_and_empty_corpus_fails_visibly(self):
         connection = FakeConnection()
-        with patch("routers.journey.get_db", return_value=connection), patch("routers.journey.load_embedding", return_value=None):
-            with self.assertRaises(HTTPException) as missing_current:
-                asyncio.run(journey_next(request()))
-            self.assertEqual(missing_current.exception.detail, "current_track_not_embedded")
+        candidate = np.zeros(512, dtype=np.float32)
+        candidate[1] = 1.0
+        candidate_row = {"track_id": "next", "name": "Next", "artist": "Other", "album": None, "spotify_uri": "spotify:track:next"}
+        with (
+            patch("routers.journey.get_db", return_value=connection),
+            patch("routers.journey.load_embedding", side_effect=[None, candidate]),
+            patch("routers.journey.find_nearest", return_value=[candidate_row]),
+            patch("routers.journey.get_clap", return_value=FakeClap()),
+        ):
+            result = asyncio.run(journey_next(request()))
+        self.assertEqual(result.selection_mode, "target_only")
+        self.assertFalse(result.current_embedding_available)
+        self.assertIsNone(result.transition_distance)
+        self.assertLessEqual(result.confidence, 0.65)
 
         current = np.zeros(512, dtype=np.float32)
         current[0] = 1.0
-        with patch("routers.journey.get_db", return_value=connection), patch("routers.journey.load_embedding", side_effect=[current, None]):
-            with self.assertRaises(HTTPException) as missing_anchor:
-                asyncio.run(journey_next(request()))
-            self.assertEqual(missing_anchor.exception.detail, "no_anchor_embeddings")
-
-        with patch("routers.journey.get_db", return_value=connection), patch("routers.journey.load_embedding", side_effect=[current, current]), patch("routers.journey.find_nearest", return_value=[]), patch("routers.journey.get_clap", return_value=FakeClap()):
+        with patch("routers.journey.get_db", return_value=connection), patch("routers.journey.load_embedding", return_value=current), patch("routers.journey.find_nearest", return_value=[]), patch("routers.journey.get_clap", return_value=FakeClap()):
             with self.assertRaises(HTTPException) as empty_corpus:
                 asyncio.run(journey_next(request()))
             self.assertEqual(empty_corpus.exception.detail, "empty_candidate_pool")
 
-    def test_anchor_uses_spotify_preview_before_metadata_fallback(self):
+    def test_anchor_endpoint_is_lookup_only(self):
         connection = FakeConnection()
-        resolver = AsyncMock(return_value=(b"audio", "https://p.scdn.co/preview.mp3", "preview_url"))
         request = EnsureTrackRequest(
             track_id="anchor",
             name="Track",
@@ -127,18 +137,13 @@ class SelectorUnitTests(unittest.TestCase):
         )
         with (
             patch("routers.journey.get_db", return_value=connection),
-            patch("routers.journey.init_schema"),
             patch("routers.journey.load_embedding", return_value=None),
-            patch("routers.journey._resolve_and_fetch", new=resolver),
-            patch("routers.journey.get_clap", return_value=FakeClap()),
-            patch("routers.journey.upsert_track"),
-            patch("routers.journey.store_embedding"),
         ):
             result = asyncio.run(ensure_anchor(request))
 
-        self.assertTrue(result.embedded)
-        self.assertEqual(result.audio_source, "preview_url")
-        self.assertEqual(resolver.await_args.args[1], "https://p.scdn.co/preview.mp3")
+        self.assertFalse(result.embedded)
+        self.assertFalse(result.created)
+        self.assertIsNone(result.audio_source)
 
 
 class ServiceAuthenticationTests(unittest.TestCase):

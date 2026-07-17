@@ -8,20 +8,27 @@ import math
 import time
 from typing import Literal, Optional
 
-import httpx
 import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from db.embeddings import find_nearest, get_db, init_schema, load_embedding, store_embedding, upsert_track
-from routers.embed import _resolve_and_fetch
-from services.clap_service import EMBEDDING_DIM, get_clap
+from db.embeddings import find_nearest, get_db, load_embedding
+from services.clap_service import get_clap
 
 router = APIRouter(prefix="/journey", tags=["journey"])
 
 PhaseType = Literal["settle", "build", "sustain", "impact", "release"]
 Knownness = Literal["known_track", "known_artist", "unseen"]
+AttributionSource = Literal["user_text", "model_suggested", "user_confirmed", "behavior_observed", "system_inferred"]
+SelectionMode = Literal["coherent", "target_only"]
 RELAX_THRESHOLDS = (0.35, 0.525, 0.7, math.inf)
+SIGNAL_WEIGHTS: dict[AttributionSource, float] = {
+    "user_text": 1.0,
+    "user_confirmed": 1.0,
+    "behavior_observed": 1.0,
+    "model_suggested": 0.5,
+    "system_inferred": 0.25,
+}
 
 
 class SkipPenalty(BaseModel):
@@ -30,11 +37,19 @@ class SkipPenalty(BaseModel):
     decisions_remaining: int = Field(..., ge=1, le=3)
 
 
+class AnchorSignal(BaseModel):
+    field: str = Field(..., min_length=1, max_length=128)
+    text: str = Field(..., min_length=1, max_length=500)
+    source: AttributionSource
+
+
 class JourneyNextRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=128)
     decision_index: int = Field(..., ge=0, le=1000)
     current_track_id: str = Field(..., min_length=1, max_length=128)
-    anchor_track_ids: list[str] = Field(..., min_length=1, max_length=3)
+    current_track_artist: str = Field(..., min_length=1, max_length=500)
+    anchor_track_ids: list[str] = Field(default_factory=list, max_length=3)
+    anchor_signals: list[AnchorSignal] = Field(default_factory=list, max_length=100)
     phase: PhaseType
     phase_description: str = Field(..., min_length=1, max_length=1000)
     familiarity_target: float = Field(0.65, ge=0.0, le=1.0)
@@ -59,11 +74,13 @@ class JourneyNextResponse(BaseModel):
     track: JourneyTrackOut
     phase: PhaseType
     confidence: float
-    transition_distance: float
+    selection_mode: SelectionMode
+    current_embedding_available: bool
+    transition_distance: Optional[float] = None
     target_distance: float
     familiarity_fit: float
     skip_penalty: float
-    relaxation_level: int
+    relaxation_level: Optional[int] = None
     candidate_count: int
     latency_ms: float
 
@@ -120,11 +137,13 @@ def _effective_skip_weight(weight: float, decisions_remaining: int) -> float:
 def _decision_score(
     *,
     phase: PhaseType,
-    transition_distance: float,
+    transition_distance: Optional[float],
     target_distance: float,
     familiarity_fit: float,
     skip_penalty: float,
 ) -> float:
+    if transition_distance is None:
+        return 0.8 * target_distance + 0.2 * familiarity_fit + 0.2 * skip_penalty
     if phase == "impact":
         base = 0.4 * transition_distance + 0.45 * target_distance + 0.15 * familiarity_fit
     else:
@@ -146,28 +165,55 @@ def _select_with_relaxation(scored: list[dict]) -> tuple[dict, int] | None:
     return None
 
 
+def _select_target_only(scored: list[dict]) -> dict | None:
+    for allow_same_artist in (False, True):
+        eligible = [candidate for candidate in scored if allow_same_artist or not candidate["same_artist"]]
+        if eligible:
+            return min(eligible, key=lambda candidate: candidate["score"])
+    return None
+
+
+async def _semantic_anchor_target(signals: list[AnchorSignal]) -> list[tuple[np.ndarray, float]]:
+    grouped: dict[AttributionSource, list[str]] = {}
+    for signal in signals:
+        grouped.setdefault(signal.source, []).append(signal.text.strip())
+    if not grouped:
+        return []
+    loop = asyncio.get_running_loop()
+    vectors: list[tuple[np.ndarray, float]] = []
+    for source, texts in grouped.items():
+        description = ". ".join(dict.fromkeys(text for text in texts if text))
+        if not description:
+            continue
+        vector = await loop.run_in_executor(None, get_clap().embed_text, description)
+        vectors.append((vector, SIGNAL_WEIGHTS[source]))
+    return vectors
+
+
 @router.post("/next", response_model=JourneyNextResponse)
 async def journey_next(req: JourneyNextRequest) -> JourneyNextResponse:
     started = time.perf_counter()
     conn = get_db(readonly=True)
     try:
         current = load_embedding(conn, req.current_track_id)
-        if current is None:
-            raise HTTPException(status_code=404, detail="current_track_not_embedded")
         anchor_vectors = [load_embedding(conn, track_id) for track_id in req.anchor_track_ids]
         anchors = [vector for vector in anchor_vectors if vector is not None]
-        if not anchors:
-            raise HTTPException(status_code=422, detail="no_anchor_embeddings")
-        anchor_target = _normalise(np.mean(anchors, axis=0))
+        semantic_anchors = await _semantic_anchor_target(req.anchor_signals)
+        weighted_anchors = [(vector, 1.0) for vector in anchors] + semantic_anchors
         loop = asyncio.get_running_loop()
         text_target = await loop.run_in_executor(None, get_clap().embed_text, req.phase_description)
-        target = _normalise(0.6 * anchor_target + 0.4 * text_target)
+        if weighted_anchors:
+            anchor_target = _normalise(sum(vector * weight for vector, weight in weighted_anchors) / sum(weight for _, weight in weighted_anchors))
+            target = _normalise(0.6 * anchor_target + 0.4 * text_target)
+        else:
+            target = _normalise(text_target)
 
         exclude = _candidate_exclusions(req.current_track_id, req.exclude_ids)
         raw_candidates: dict[str, dict] = {}
-        for row in find_nearest(conn, current, k=50, exclude_ids=list(exclude)):
-            raw_candidates[row["track_id"]] = row
-        for row in find_nearest(conn, target, k=50, exclude_ids=list(exclude)):
+        if current is not None:
+            for row in find_nearest(conn, current, k=50, exclude_ids=list(exclude)):
+                raw_candidates[row["track_id"]] = row
+        for row in find_nearest(conn, target, k=50 if current is not None else 100, exclude_ids=list(exclude)):
             raw_candidates[row["track_id"]] = row
 
         known_ids = set(req.known_track_ids)
@@ -180,15 +226,14 @@ async def journey_next(req: JourneyNextRequest) -> JourneyNextResponse:
             vector = load_embedding(conn, penalty.track_id)
             if vector is not None:
                 penalty_vectors.append((vector, _effective_skip_weight(penalty.weight, penalty.decisions_remaining)))
-        current_row = conn.execute("SELECT artist FROM tracks WHERE id = ?", (req.current_track_id,)).fetchone()
-        current_artist = (current_row["artist"] if current_row else "").casefold()
+        current_artist = req.current_track_artist.casefold()
 
         scored: list[dict] = []
         for track_id, row in raw_candidates.items():
             vector = load_embedding(conn, track_id)
             if vector is None:
                 continue
-            transition_distance = _cosine_distance(current, vector)
+            transition_distance = _cosine_distance(current, vector) if current is not None else None
             target_distance = _cosine_distance(target, vector)
             knownness = _knownness(track_id, row.get("artist") or "", known_ids, known_artists)
             known_value = 1.0 if knownness == "known_track" else 0.5 if knownness == "known_artist" else 0.0
@@ -207,20 +252,30 @@ async def journey_next(req: JourneyNextRequest) -> JourneyNextResponse:
 
         if not scored:
             raise HTTPException(status_code=422, detail="empty_candidate_pool")
-        selection = _select_with_relaxation(scored)
-        if selection is None:
+        if current is None:
+            selected = _select_target_only(scored)
+            relaxation_level = None
+        else:
+            selection = _select_with_relaxation(scored)
+            if selection is None:
+                raise HTTPException(status_code=422, detail="no_candidate_after_relaxation")
+            selected, relaxation_level = selection
+        if selected is None:
             raise HTTPException(status_code=422, detail="no_candidate_after_relaxation")
-        selected, relaxation_level = selection
 
         row = selected["row"]
         confidence = max(0.0, min(1.0, 1.0 - selected["score"]))
+        if current is None:
+            confidence = min(confidence, 0.65)
         decision_id = hashlib.sha256(f"{req.session_id}:{req.decision_index}:{selected['track_id']}".encode()).hexdigest()[:20]
         return JourneyNextResponse(
             decision_id=decision_id,
             track=JourneyTrackOut(id=selected["track_id"], name=row.get("name") or "Unknown", artist=row.get("artist") or "Unknown", album=row.get("album"), spotify_uri=row.get("spotify_uri"), knownness=selected["knownness"]),
             phase=req.phase,
             confidence=round(confidence, 6),
-            transition_distance=round(selected["transition_distance"], 6),
+            selection_mode="coherent" if current is not None else "target_only",
+            current_embedding_available=current is not None,
+            transition_distance=round(selected["transition_distance"], 6) if selected["transition_distance"] is not None else None,
             target_distance=round(selected["target_distance"], 6),
             familiarity_fit=round(selected["familiarity_fit"], 6),
             skip_penalty=round(selected["skip_penalty"], 6),
@@ -234,22 +289,9 @@ async def journey_next(req: JourneyNextRequest) -> JourneyNextResponse:
 
 @router.post("/anchor", response_model=EnsureTrackResponse)
 async def ensure_anchor(req: EnsureTrackRequest) -> EnsureTrackResponse:
-    conn = get_db()
+    conn = get_db(readonly=True)
     try:
-        init_schema(conn)
-        if load_embedding(conn, req.track_id) is not None:
-            return EnsureTrackResponse(track_id=req.track_id, embedded=True, created=False)
-        async with httpx.AsyncClient() as client:
-            audio_bytes, url_used, source = await _resolve_and_fetch(client, req.preview_url, req.artist, req.name)
-        if not audio_bytes:
-            raise HTTPException(status_code=422, detail="anchor_audio_unavailable")
-        loop = asyncio.get_running_loop()
-        vector = await loop.run_in_executor(None, get_clap().embed_audio_from_bytes, audio_bytes)
-        if vector.shape != (EMBEDDING_DIM,):
-            raise HTTPException(status_code=500, detail="invalid_anchor_embedding")
-        upsert_track(conn, track_id=req.track_id, name=req.name, artist=req.artist, album=req.album, spotify_uri=req.spotify_uri or f"spotify:track:{req.track_id}", audio_url_used=url_used, audio_source=source, duration_ms=req.duration_ms, seed_query="journey_anchor")
-        store_embedding(conn, track_id=req.track_id, embedding=vector)
-        conn.commit()
-        return EnsureTrackResponse(track_id=req.track_id, embedded=True, created=True, audio_source=source)
+        embedded = load_embedding(conn, req.track_id) is not None
+        return EnsureTrackResponse(track_id=req.track_id, embedded=embedded, created=False)
     finally:
         conn.close()

@@ -8,6 +8,7 @@ The execution gate is **completed paired runs, not code shipped**. After the fir
 
 - iPhone Safari is the control and observation surface; Spotify remains the audio player.
 - Spotify Premium and an active iPhone Spotify device are required.
+- Woody drafts one private decision ahead, commits it to Spotify near the transition, and exposes a quiet Steer control for impact, phase, and direction changes.
 - Live behavior is observed through Spotify state every five seconds. Headphone, Watch, and phone skips use the same observer.
 - Upcoming tracks stay hidden. The user edits phases, familiarity balance, and impact windows—not a generated queue.
 - Playback behavior and retrospective self-report remain separate evidence channels.
@@ -24,7 +25,9 @@ The execution gate is **completed paired runs, not code shipped**. After the fir
 - `packages/acoustic-service/` — protected FastAPI CLAP corpus and deterministic one-track selector.
 - `packages/acoustic-service/data/woody.db` — local corpus; ignored by Git and uploaded separately to Modal.
 
-The V0 selector uses only the 364 stored CLAP embeddings. Missing tempo, energy, danceability, and 5D values do not influence selection.
+Spotify is the playback adapter, not Woody's intelligence layer. The V0 selector uses the existing 364-track CLAP research corpus plus semantic evidence from user anchor notes, confirmed tags, and accepted phase descriptions. Missing tempo, energy, danceability, and 5D values do not influence selection. Journey runtime does not download Spotify audio or require a preview clip.
+
+When the current Spotify track already exists in the corpus, selection combines transition coherence with phase-target fit. When it does not, Woody makes a lower-confidence target-only first hop and reports that fallback in diagnostics. A missing anchor embedding is therefore not a setup blocker.
 
 ## Local Setup
 
@@ -55,15 +58,17 @@ Set `WOODY_ALLOW_UNAUTHENTICATED=1` only for isolated local acoustic-service wor
 ## Journey APIs
 
 - `POST /api/journey/plan` — validate setup and return editable phases/tags with deterministic fallback.
-- `POST /api/journey/anchor` — ensure a selected anchor exists in the acoustic corpus.
+- `POST /api/journey/anchor` — compatibility lookup that reports whether an anchor already exists in the corpus; it does not fetch audio.
 - `POST /api/journey/next` — request one reproducible next-track decision.
-- `GET /api/spotify/context` — deduplicate recent, medium-term top, and first 200 saved tracks.
+- `GET /api/spotify/context` — optional knownness context. It returns empty sets unless `WOODY_SPOTIFY_PERSONALIZATION=true` is explicitly configured.
 - `GET /api/player/devices` and `GET /api/player/state` — observe the official Spotify player.
 - `POST /api/player/play` and `POST /api/player/queue` — control the active Spotify device.
 
 Access tokens remain in HTTP-only server cookies. Journey and player routes require a valid Spotify session. The acoustic service requires its shared bearer token on every non-health endpoint.
 
 Gemini is optional and is called once during journey setup to suggest editable phase language and tags. Raw user text, model suggestions, user confirmations, playback behavior, and system inference retain separate provenance. Gemini never supplies measured acoustic facts and never participates in the live next-track score.
+
+During an adaptive run, Woody drafts a decision without touching Spotify, then queues it when roughly 15 seconds remain. Steer invalidates any uncommitted draft and can affect the next track, a two-track detour, or the rest of the journey. `CUT NOW` is an explicit user action; persistent direction changes can be reverted. Voice control is intentionally absent because Spotify's [Developer Policy](https://developer.spotify.com/policy) prohibits voice-enabled Spotify control.
 
 ## Validation
 

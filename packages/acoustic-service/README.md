@@ -1,5 +1,7 @@
 # Woody Acoustic Service
 
+> **Journey runtime note:** preview/iTunes audio resolution remains only for legacy corpus research endpoints. The mobile Journey does not fetch Spotify audio and never blocks setup on preview availability.
+
 CLAP-based acoustic navigation + legacy Librosa feature extraction.
 
 This is the **engine** of Woody. CLAP embeddings (`/embed/*`) provide the 512-dimensional
@@ -111,11 +113,11 @@ The database is operational data, not source: keep it ignored by Git and upload 
 
 ### POST `/journey/next`
 
-Selects one track using the anchor/phase CLAP target, current-track coherence, familiarity fit, temporary skip-region penalties, coherence relaxation, and deterministic session tie-breaking. It uses no absent Spotify audio features.
+Selects one track using provenance-weighted semantic anchor signals, available stored anchor embeddings, the accepted phase description, familiarity fit, temporary skip-region penalties, and deterministic session tie-breaking. When the current track has a stored embedding, transition coherence and relaxation are applied. Otherwise the endpoint uses a lower-confidence target-only fallback. It uses no absent Spotify audio features and does not resolve audio during the request.
 
 ### POST `/journey/anchor`
 
-Resolves an arbitrary Spotify anchor through the preview/iTunes path, embeds it, and upserts it. It returns a visible `422` when audio cannot be resolved.
+Compatibility lookup only. It reports whether an arbitrary Spotify anchor already has a stored embedding. It does not resolve, download, embed, or upsert audio.
 
 ## API
 
@@ -132,6 +134,8 @@ Returns:
 
 ### POST `/embed/audio`
 
+Legacy/research corpus tooling only; it is not called by Journey runtime.
+
 Accepts EITHER a direct preview URL OR `artist + title` (an iTunes Search lookup
 fallback is invoked when `preview_url` is absent — required because Spotify
 deprecated `preview_url` for new app registrations in 2024).
@@ -145,6 +149,8 @@ deprecated `preview_url` for new app registrations in 2024).
 Returns `{ "embedding": [...512...], "dim": 512, "audio_source": "preview_url" | "itunes", "audio_url_used": "..." }`.
 
 ### POST `/embed/audio/batch`
+
+Legacy/research corpus tooling only; it is not called by Journey runtime.
 
 ```json
 { "tracks": [{ "id": "spotify_xxx", "artist": "...", "title": "..." }, ...] }

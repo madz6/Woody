@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createJourneyPlan, parseJourneyPlanInput } from './journey'
+import { createJourneyPlan, journeyAnchorSignals, parseJourneyPlanInput } from './journey'
 import type { Track } from './types'
 
 const track: Track = {
@@ -87,5 +87,21 @@ describe('journey fallback plan', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('/gemini-3.1-flash-lite:generateContent')
     expect(plan.anchors[0].attribution.some((item) => item.source === 'model_suggested')).toBe(true)
     expect(plan.anchors[0].confirmedTags).toEqual({})
+  })
+})
+
+describe('journey anchor signals', () => {
+  it('keeps suggestions separate from explicit confirmation', async () => {
+    vi.stubEnv('GEMINI_API_KEY', '')
+    const plan = await createJourneyPlan({
+      mode: 'adaptive',
+      intent: 'patient forward motion',
+      durationMinutes: 30,
+      anchors: [{ track, role: 'opener', note: 'hold the tension' }],
+    })
+    const signals = journeyAnchorSignals(plan.anchors)
+    expect(signals.find((signal) => signal.text === 'hold the tension')?.source).toBe('user_text')
+    expect(signals.some((signal) => signal.source === 'system_inferred')).toBe(true)
+    expect(signals.some((signal) => signal.source === 'user_confirmed')).toBe(false)
   })
 })

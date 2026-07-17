@@ -23,6 +23,7 @@
 
 import type {
   AcousticCoords5D,
+  AttributionProvenance,
   ArcResult,
   ArcShape,
   ArcStep,
@@ -100,7 +101,9 @@ export interface AcousticJourneyNextInput {
   sessionId: string
   decisionIndex: number
   currentTrackId: string
+  currentTrackArtist: string
   anchorTrackIds: string[]
+  anchorSignals: Array<{ field: string; text: string; source: AttributionProvenance }>
   phase: AcousticJourneyPhase
   phaseDescription: string
   familiarityTarget: number
@@ -123,11 +126,13 @@ interface AcousticJourneyNextRaw {
   }
   phase: AcousticJourneyPhase
   confidence: number
-  transition_distance: number
+  selection_mode: 'coherent' | 'target_only'
+  current_embedding_available: boolean
+  transition_distance: number | null
   target_distance: number
   familiarity_fit: number
   skip_penalty: number
-  relaxation_level: number
+  relaxation_level: number | null
   candidate_count: number
   latency_ms: number
 }
@@ -144,11 +149,13 @@ export interface AcousticJourneyDecision {
   }
   phase: AcousticJourneyPhase
   confidence: number
-  transitionDistance: number
+  selectionMode: 'coherent' | 'target_only'
+  currentEmbeddingAvailable: boolean
+  transitionDistance: number | null
   targetDistance: number
   familiarityFit: number
   skipPenalty: number
-  relaxationLevel: number
+  relaxationLevel: number | null
   candidateCount: number
   latencyMs: number
 }
@@ -162,7 +169,9 @@ export async function selectJourneyNext(
       session_id: input.sessionId,
       decision_index: input.decisionIndex,
       current_track_id: input.currentTrackId,
+      current_track_artist: input.currentTrackArtist,
       anchor_track_ids: input.anchorTrackIds,
+      anchor_signals: input.anchorSignals,
       phase: input.phase,
       phase_description: input.phaseDescription,
       familiarity_target: input.familiarityTarget,
@@ -191,6 +200,8 @@ export async function selectJourneyNext(
     },
     phase: raw.phase,
     confidence: raw.confidence,
+    selectionMode: raw.selection_mode,
+    currentEmbeddingAvailable: raw.current_embedding_available,
     transitionDistance: raw.transition_distance,
     targetDistance: raw.target_distance,
     familiarityFit: raw.familiarity_fit,
@@ -228,7 +239,6 @@ export async function ensureJourneyAnchor(
       album: input.album,
       spotify_uri: input.spotifyUri,
       duration_ms: input.durationMs,
-      preview_url: input.previewUrl,
     },
     BATCH_TIMEOUT_MS,
   )
