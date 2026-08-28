@@ -17,6 +17,7 @@ export interface Track {
   album: string
   albumArt?: string
   spotifyUri?: string
+  externalUrl?: string
   youtubeId?: string
   durationMs: number
   previewUrl?: string
@@ -386,6 +387,7 @@ export type JourneyEventType =
   | 'session_started'
   | 'track_started'
   | 'track_completed'
+  | 'expected_queued_transition'
   | 'manual_transition'
   | 'user_override'
   | 'queue_added'
@@ -399,6 +401,11 @@ export type JourneyEventType =
   | 'explicit_rejection'
   | 'wake_lock_lost'
   | 'network_error'
+  | 'observation_gap'
+  | 'candidate_rejected'
+  | 'direction_changed'
+  | 'aspect_marked'
+  | 'duration_reached'
 
 export interface JourneyEventV1 {
   version: 1
@@ -446,3 +453,124 @@ export interface JourneyRunReview {
   chooseAdaptiveAgain: boolean
   submittedAt: string
 }
+
+// Founder rig V2 contracts. V1 remains above for local-storage migration only.
+
+export type JourneyStartSource = 'current_spotify_track' | 'supported_track_search'
+export type JourneyAdjustmentKind = 'closer_to_current' | 'different_next' | 'change_direction'
+export type JourneyAdjustmentScope = 'next_track' | 'rest_of_session'
+
+export interface JourneyPlanV2 {
+  version: 2
+  sessionId: string
+  mode: JourneySessionMode
+  direction: string
+  durationMinutes: number
+  startTrack: Track
+  startSource: JourneyStartSource
+  createdAt: string
+}
+
+export interface JourneyAdjustmentV1 {
+  version: 1
+  id: string
+  kind: JourneyAdjustmentKind
+  scope: JourneyAdjustmentScope
+  text?: string
+  directionRevision: number
+  createdAt: string
+}
+
+export interface JourneyDecisionBasisV1 {
+  trackId: string
+  directionRevision: number
+  playbackPositionMs: number
+}
+
+export interface JourneyTransitionDiagnosticsV2 {
+  selectionMode: 'coherent'
+  currentEmbeddingAvailable: true
+  transitionDistance: number
+  targetDistance: number
+  skipPenalty: number
+  relaxationLevel: number
+  candidateCount: number
+  latencyMs: number
+  adjustment?: JourneyAdjustmentKind
+}
+
+export interface JourneyDecisionV2 {
+  decisionId: string
+  selectedTrack: Track
+  confidence: number
+  basis: JourneyDecisionBasisV1
+  diagnostics: JourneyTransitionDiagnosticsV2
+  adjustmentId?: string
+}
+
+export type AspectLabel = 'beat' | 'bass' | 'melody' | 'vocal' | 'instrument_sound' | 'other'
+
+export interface AspectCaptureV1 {
+  version: 1
+  id: string
+  sessionId: string
+  track: Track
+  capturedPositionMs: number
+  provisionalWindowStartMs: number
+  provisionalWindowEndMs: number
+  directionContext: string
+  decisionId?: string
+  label?: AspectLabel
+  userText?: string
+  status: 'captured_only' | 'audio_matched' | 'analyzed'
+  createdAt: string
+}
+
+export interface AspectMatchDiagnosticsV1 {
+  captureId: string
+  requestedAspect?: AspectLabel
+  matchedStem: 'full' | 'drums' | 'bass' | 'vocals' | 'other'
+  segmentDistance: number
+  featureRankPercentile?: number
+  stemRankPercentile?: number
+  sourceWindowStartMs: number
+  sourceWindowEndMs: number
+  analysisVersion: string
+}
+
+export interface JourneyQuickReviewV1 {
+  stayedWhereWanted: 'yes' | 'no' | 'not_sure'
+  note?: string
+  submittedAt: string
+}
+
+export interface JourneyResearchReviewV1 {
+  pairNumber: 1 | 2 | 3 | 4
+  pairLeg: 1 | 2
+  timingSupport: number
+  manualManagementEffort: number
+  transitionNotes: string
+  overallPreference: 'adaptive' | 'control_observation' | 'no_preference'
+  submittedAt: string
+}
+
+export interface JourneySessionV2 {
+  version: 2
+  plan: JourneyPlanV2
+  status: 'active' | 'paused_override' | 'completed'
+  direction: string
+  directionRevision: number
+  decisions: JourneyDecisionV2[]
+  events: JourneyEventV1[]
+  aspectCaptures: AspectCaptureV1[]
+  playedTrackIds: string[]
+  sessionExcludedTrackIds: string[]
+  skipPenalties: JourneySkipPenalty[]
+  playbackElapsedMs: number
+  startedAt: string
+  endedAt?: string
+  quickReview?: JourneyQuickReviewV1
+  researchReview?: JourneyResearchReviewV1
+}
+
+export type StoredJourneySession = JourneySessionV1 | JourneySessionV2

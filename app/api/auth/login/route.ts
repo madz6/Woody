@@ -4,16 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 
 const SCOPES = [
-  'user-read-private',
-  'user-read-email',
   'user-read-playback-state',
   'user-modify-playback-state',
-  'user-read-currently-playing',
-  'streaming',
-  'playlist-read-private',
-  'user-library-read',
-  'user-top-read',
-  'user-read-recently-played',
 ].join(' ')
 
 export async function GET(request: NextRequest) {

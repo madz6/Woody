@@ -1,6 +1,6 @@
 # Woody Acoustic Service
 
-> **Journey runtime note:** preview/iTunes audio resolution remains only for legacy corpus research endpoints. The mobile Journey does not fetch Spotify audio and never blocks setup on preview availability.
+> **Founder Rig runtime:** the Journey never fetches Spotify audio. Adaptive sessions require a real current-track embedding and are blocked when the track is unsupported.
 
 CLAP-based acoustic navigation + legacy Librosa feature extraction.
 
@@ -8,8 +8,8 @@ This is the **engine** of Woody. CLAP embeddings (`/embed/*`) provide the 512-di
 navigation space the arc generator (`/arc/generate`) operates in. The legacy Librosa
 endpoint (`/analyze`) is retained for backward compatibility with `lib/acoustic.ts`.
 
-See [`../../WOODY_BUILD_SPEC.md`](../../WOODY_BUILD_SPEC.md) Sections 3-6 for the canonical
-spec. The acoustic architecture is summarised in [`../../.cursor/rules/woody-engine.mdc`](../../.cursor/rules/woody-engine.mdc).
+The current runtime contract is defined by [`../../README.md`](../../README.md) and
+[`../../THE_PATH.md`](../../THE_PATH.md). Older engine specifications are historical context.
 
 ## What It Returns
 
@@ -78,6 +78,8 @@ with wheels for NumPy/SciPy, plus **ffmpeg** and **libsndfile**.
 From `packages/acoustic-service`:
 
 ```bash
+export WOODY_SERVICE_TOKEN=<long-random-value> # bash
+# $env:WOODY_SERVICE_TOKEN='<long-random-value>' # PowerShell
 docker compose up --build
 ```
 
@@ -113,11 +115,15 @@ The database is operational data, not source: keep it ignored by Git and upload 
 
 ### POST `/journey/next`
 
-Selects one track using provenance-weighted semantic anchor signals, available stored anchor embeddings, the accepted phase description, familiarity fit, temporary skip-region penalties, and deterministic session tie-breaking. When the current track has a stored embedding, transition coherence and relaxation are applied. Otherwise the endpoint uses a lower-confidence target-only fallback. It uses no absent Spotify audio features and does not resolve audio during the request.
+Requires stored embeddings for both the current and starting track. It combines approximately 78% current-track transition coherence with 22% start-track/direction target proximity. Deterministic tie-breaking, exclusions, same-artist avoidance, coherence relaxation, and temporary session skip penalties remain active. There is no target-only fallback, familiarity score, knownness import, phase model, or LLM input.
 
 ### POST `/journey/anchor`
 
 Compatibility lookup only. It reports whether an arbitrary Spotify anchor already has a stored embedding. It does not resolve, download, embed, or upsert audio.
+
+### GET `/journey/corpus/search`
+
+Searches only tracks with stored embeddings and usable Spotify IDs so the web rig can offer a supported starting-track fallback.
 
 ## API
 

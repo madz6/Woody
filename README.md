@@ -1,106 +1,78 @@
-# Woody Run Companion V0
+# Woody
 
-Woody is a private, mobile-first experiment for adaptive music sequencing during low-control journeys. V0 uses running as the first laboratory, controls the official Spotify app on an iPhone, selects one track ahead from a real CLAP embedding corpus, and compares the result with the founder's normal queue in matched pairs.
+**An adaptive music companion for hands-busy moments — it picks the next track *while you move*, instead of making you plan a queue or skip mid-run.**
 
-The execution gate is **completed paired runs, not code shipped**. After the first working adaptive session, feature work pauses until the first adaptive/control pair is complete.
+Woody is a personal project. I built it to play my own music the way I like on runs and other times my hands are busy, and I'm open-sourcing it in case the ideas or the code are useful to anyone else. It is an honest experiment, not a product — see [Status](#status) below.
 
-## V0 Boundaries
+<!-- Add a screenshot or short GIF of the app here — it's the single biggest thing that makes a repo feel alive:
+![Woody](docs/screenshot.png)
+-->
 
-- iPhone Safari is the control and observation surface; Spotify remains the audio player.
-- Spotify Premium and an active iPhone Spotify device are required.
-- Woody drafts one private decision ahead, commits it to Spotify near the transition, and exposes a quiet Steer control for impact, phase, and direction changes.
-- Live behavior is observed through Spotify state every five seconds. Headphone, Watch, and phone skips use the same observer.
-- Upcoming tracks stay hidden. The user edits phases, familiarity balance, and impact windows—not a generated queue.
-- Playback behavior and retrospective self-report remain separate evidence channels.
-- Route sensing, cadence, heart rate, native iOS, motorbike testing, monetisation, and a learned metric are outside V0.
-- The old globe is frozen at `/legacy` in development only.
+## The idea
 
-## Architecture
+A playlist is a *set* of songs. Woody is a *path* through them.
 
-- `app/` — Next.js 16 mobile UI and authenticated server routes.
-- `components/journey/` — setup, editable preview, run observer, override recovery, and review.
-- `lib/journey.ts` — validated plan schema and deterministic AI fallback.
-- `lib/playbackObserver.ts` — natural completion, manual transition, and external override reducer.
-- `lib/journeyStorage.ts` — versioned browser storage and JSON export.
-- `packages/acoustic-service/` — protected FastAPI CLAP corpus and deterministic one-track selector.
-- `packages/acoustic-service/data/woody.db` — local corpus; ignored by Git and uploaded separately to Modal.
+Most music apps hand you a bag of tracks and let you skip. But when you're running (or riding, or cleaning), you can't curate — your hands and attention are on the thing you're doing. Woody's bet is that the valuable move is **choosing what should come next, one track at a time, so the sequence feels timed to the moment without you managing it.**
 
-Spotify is the playback adapter, not Woody's intelligence layer. The V0 selector uses the existing 364-track CLAP research corpus plus semantic evidence from user anchor notes, confirmed tags, and accepted phase descriptions. Missing tempo, energy, danceability, and 5D values do not influence selection. Journey runtime does not download Spotify audio or require a preview clip.
+It works on **sound, not tags**. Every track is turned into a vector by [CLAP](https://github.com/LAION-AI/CLAP) (a model that embeds audio and text into the same space), so "what fits next" is measured by how the music actually *sounds* — not by genre labels or by "people who played X also played Y." That lets it move between two songs that share a feel even if they'd never share a genre.
 
-When the current Spotify track already exists in the corpus, selection combines transition coherence with phase-target fit. When it does not, Woody makes a lower-confidence target-only first hop and reports that fallback in diagnostics. A missing anchor embedding is therefore not a setup blocker.
+The other half is **honesty about evidence.** Woody refuses to pretend it knows more than it does:
 
-## Local Setup
+- Finishing a track is *neutral*, never counted as "you loved it."
+- Silence or a dropped connection is a *gap*, not a preference.
+- A skip means "wrong *now*," not "wrong forever" — and never "why."
+- It never invents acoustic facts (BPM, key, energy) it hasn't actually measured.
 
-Prerequisites: Node 20.9+ (Node 24 is used locally), Python 3.11, Spotify Premium, and a Spotify developer app.
+## How it works
+
+- A **Python acoustic service** holds a corpus of tracks as CLAP embeddings and answers one question at a time: *given the current track and a stated direction, what's the best next track?* Selection is deterministic and reproducible, scored mostly on transition coherence with a gentle pull toward your chosen direction.
+- A **Next.js web app** (built for iPhone Safari) is the control surface. It drives the **official Spotify app** as the audio device, observes natural playback (skips from your headphones, watch, or phone; how much of each track you actually heard), and stores everything locally.
+- Nothing about Spotify's audio is captured or analysed — Woody only ever sees playback *events*, and any local audio experiments use files you provide yourself.
+
+## Tech
+
+Next.js 16 · TypeScript · Python (FastAPI) · CLAP embeddings · SQLite · Spotify Web API
+
+## Getting started
+
+**Prerequisites:** Node 20.9+ (24 recommended), Python 3.11, Spotify **Premium**, and a Spotify developer app.
 
 ```powershell
-Copy-Item .env.local.example .env.local
+# 1. Web app
+Copy-Item .env.local.example .env.local   # fill in your Spotify + AI keys
 npm install
 
+# 2. Acoustic service (separate terminal)
 cd packages/acoustic-service
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8765
-```
 
-In another terminal:
-
-```powershell
+# 3. Run the web app (back in the root, separate terminal)
 npm run dev:spotify
 ```
 
-Register this exact local Spotify callback:
+Register this exact redirect URI in your Spotify developer dashboard:
 
-```text
+```
 http://127.0.0.1:8888/api/auth/callback
 ```
 
-Set `WOODY_ALLOW_UNAUTHENTICATED=1` only for isolated local acoustic-service work, or set the same long random value in `WOODY_SERVICE_TOKEN` and `ACOUSTIC_SERVICE_TOKEN`.
+For local-only acoustic-service work you can set `WOODY_ALLOW_UNAUTHENTICATED=1`; otherwise set the same random value in both `WOODY_SERVICE_TOKEN` and `ACOUSTIC_SERVICE_TOKEN`. Access tokens live in HTTP-only cookies; every service endpoint except `/health` requires the shared token.
 
-## Journey APIs
+## Project layout
 
-- `POST /api/journey/plan` — validate setup and return editable phases/tags with deterministic fallback.
-- `POST /api/journey/anchor` — compatibility lookup that reports whether an anchor already exists in the corpus; it does not fetch audio.
-- `POST /api/journey/next` — request one reproducible next-track decision.
-- `GET /api/spotify/context` — optional knownness context. It returns empty sets unless `WOODY_SPOTIFY_PERSONALIZATION=true` is explicitly configured.
-- `GET /api/player/devices` and `GET /api/player/state` — observe the official Spotify player.
-- `POST /api/player/play` and `POST /api/player/queue` — control the active Spotify device.
-
-Access tokens remain in HTTP-only server cookies. Journey and player routes require a valid Spotify session. The acoustic service requires its shared bearer token on every non-health endpoint.
-
-Gemini is optional and is called once during journey setup to suggest editable phase language and tags. Raw user text, model suggestions, user confirmations, playback behavior, and system inference retain separate provenance. Gemini never supplies measured acoustic facts and never participates in the live next-track score.
-
-During an adaptive run, Woody drafts a decision without touching Spotify, then queues it when roughly 15 seconds remain. Steer invalidates any uncommitted draft and can affect the next track, a two-track detour, or the rest of the journey. `CUT NOW` is an explicit user action; persistent direction changes can be reverted. Voice control is intentionally absent because Spotify's [Developer Policy](https://developer.spotify.com/policy) prohibits voice-enabled Spotify control.
-
-## Validation
-
-```powershell
-npm test
-npm run lint
-npm run build
-npm audit --omit=dev
-npx tsc --noEmit --incremental false
-
-cd packages/acoustic-service
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\python.exe -m compileall -q .
+```
+app/                         Next.js pages + authenticated API routes (/api/journey/*, /api/player/*)
+components/journey/          The listening + review UI
+lib/                         Journey planning, playback observation, local storage
+packages/acoustic-service/   Python: CLAP corpus + the one-next-track selector
 ```
 
-Before deployment, also scan tracked files and reachable Git history for credentials. Do not commit `.env.local`, `woody.db`, listen-test output, Vercel state, caches, or build artifacts.
+## Status
 
-## Private Deployment
+This is a **personal experiment, honestly incomplete.** The core question — does adaptive one-track-at-a-time selection actually feel better than a good playlist? — hasn't been settled with real side-by-side runs yet. The acoustic engine is real; the "it feels better" claim is not proven. I'm sharing it as a working sketch of an idea I find interesting, not a polished or maintained product. Use it, fork it, take the parts you like.
 
-1. Revoke the previously exposed Gemini key in Google AI Studio and add only the rotated key to local/Vercel environment storage.
-2. Create an empty private GitHub repository, add it as `origin`, scan tracked files and reachable history, then push.
-3. After verifying the sanitized remote, expire local reflogs and garbage-collect the dangling secret-bearing commit.
-4. Follow `packages/acoustic-service/README.md` to create the Modal volume/secret, upload `woody.db`, and deploy.
-5. Import the private GitHub repository in Vercel and set Spotify, AI, and acoustic-service variables from `.env.local.example`.
-6. Add `https://<private-vercel-host>/api/auth/callback` to Spotify and set it as `SPOTIFY_REDIRECT_URI` in Vercel.
+## License
 
-Spotify documents Premium requirements and mobile Safari interaction constraints for playback integrations. Keep this prototype private and noncommercial.
-
-## Reality-Contact Gate
-
-Run four matched pairs in this order: A/C, C/A, A/C, C/A. Match route, duration, and intended effort. After each run, record timing/support, management effort, sustained-effort support, impact moments, weak transitions, and preference.
-
-Pass only when adaptive is preferred in at least three pairs, uses fewer interventions in at least three, creates specifically well-timed impact in at least two sessions, is chosen voluntarily for run nine, and the motorbike problem interview confirms recurring pain and later-test willingness.
-
-`THE_PATH.md` is the canonical operating decision. Stale root Markdown files are archived only after the first matched pair, not before.
+[MIT](LICENSE) © Madhu Racherla

@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Research-only broad source separation. Do not install in the deployed service image.
+demucs==4.0.1

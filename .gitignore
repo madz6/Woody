@@ -13,4 +13,9 @@ __pycache__/
 packages/acoustic-service/data/*.db
 packages/acoustic-service/founder_listen*.txt
 packages/acoustic-service/test_arc_output*.txt
+packages/acoustic-service/data/aspect_lab.db
+packages/acoustic-service/aspect-audio/
+packages/acoustic-service/aspect-stems/
+packages/acoustic-service/aspect-trials*.json
 .DS_Store
+_private/

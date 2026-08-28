@@ -23,7 +23,6 @@
 
 import type {
   AcousticCoords5D,
-  AttributionProvenance,
   ArcResult,
   ArcShape,
   ArcStep,
@@ -88,8 +87,7 @@ async function postJson<TIn, TOut>(
 
 // Journey selection
 
-export type AcousticKnownness = 'known_track' | 'known_artist' | 'unseen'
-export type AcousticJourneyPhase = 'settle' | 'build' | 'sustain' | 'impact' | 'release'
+export type AcousticJourneyAdjustment = 'closer_to_current' | 'different_next' | 'change_direction'
 
 export interface AcousticSkipPenalty {
   trackId: string
@@ -102,14 +100,9 @@ export interface AcousticJourneyNextInput {
   decisionIndex: number
   currentTrackId: string
   currentTrackArtist: string
-  anchorTrackIds: string[]
-  anchorSignals: Array<{ field: string; text: string; source: AttributionProvenance }>
-  phase: AcousticJourneyPhase
-  phaseDescription: string
-  familiarityTarget: number
-  knownTrackIds: string[]
-  knownArtists: string[]
-  recentKnownness: AcousticKnownness[]
+  startTrackId: string
+  direction: string
+  adjustment?: AcousticJourneyAdjustment
   excludeIds: string[]
   skipPenalties: AcousticSkipPenalty[]
 }
@@ -122,19 +115,17 @@ interface AcousticJourneyNextRaw {
     artist: string
     album?: string
     spotify_uri?: string
-    knownness: AcousticKnownness
   }
-  phase: AcousticJourneyPhase
   confidence: number
-  selection_mode: 'coherent' | 'target_only'
-  current_embedding_available: boolean
-  transition_distance: number | null
+  selection_mode: 'coherent'
+  current_embedding_available: true
+  transition_distance: number
   target_distance: number
-  familiarity_fit: number
   skip_penalty: number
-  relaxation_level: number | null
+  relaxation_level: number
   candidate_count: number
   latency_ms: number
+  adjustment?: AcousticJourneyAdjustment
 }
 
 export interface AcousticJourneyDecision {
@@ -145,19 +136,17 @@ export interface AcousticJourneyDecision {
     artist: string
     album?: string
     spotifyUri?: string
-    knownness: AcousticKnownness
   }
-  phase: AcousticJourneyPhase
   confidence: number
-  selectionMode: 'coherent' | 'target_only'
-  currentEmbeddingAvailable: boolean
-  transitionDistance: number | null
+  selectionMode: 'coherent'
+  currentEmbeddingAvailable: true
+  transitionDistance: number
   targetDistance: number
-  familiarityFit: number
   skipPenalty: number
-  relaxationLevel: number | null
+  relaxationLevel: number
   candidateCount: number
   latencyMs: number
+  adjustment?: AcousticJourneyAdjustment
 }
 
 export async function selectJourneyNext(
@@ -170,14 +159,9 @@ export async function selectJourneyNext(
       decision_index: input.decisionIndex,
       current_track_id: input.currentTrackId,
       current_track_artist: input.currentTrackArtist,
-      anchor_track_ids: input.anchorTrackIds,
-      anchor_signals: input.anchorSignals,
-      phase: input.phase,
-      phase_description: input.phaseDescription,
-      familiarity_target: input.familiarityTarget,
-      known_track_ids: input.knownTrackIds,
-      known_artists: input.knownArtists,
-      recent_knownness: input.recentKnownness,
+      start_track_id: input.startTrackId,
+      direction: input.direction,
+      adjustment: input.adjustment,
       exclude_ids: input.excludeIds,
       skip_penalties: input.skipPenalties.map((penalty) => ({
         track_id: penalty.trackId,
@@ -196,20 +180,46 @@ export async function selectJourneyNext(
       artist: raw.track.artist,
       album: raw.track.album,
       spotifyUri: raw.track.spotify_uri,
-      knownness: raw.track.knownness,
     },
-    phase: raw.phase,
     confidence: raw.confidence,
     selectionMode: raw.selection_mode,
     currentEmbeddingAvailable: raw.current_embedding_available,
     transitionDistance: raw.transition_distance,
     targetDistance: raw.target_distance,
-    familiarityFit: raw.familiarity_fit,
     skipPenalty: raw.skip_penalty,
     relaxationLevel: raw.relaxation_level,
     candidateCount: raw.candidate_count,
     latencyMs: raw.latency_ms,
+    adjustment: raw.adjustment,
   }
+}
+
+export interface SupportedCorpusTrack {
+  id: string
+  name: string
+  artist: string
+  album?: string
+  spotifyUri: string
+  durationMs: number
+}
+
+export async function searchSupportedCorpus(query: string): Promise<SupportedCorpusTrack[]> {
+  if (!ACOUSTIC_SERVICE_URL) throw new Error('[acousticService] ACOUSTIC_SERVICE_URL is not configured')
+  const response = await fetch(`${ACOUSTIC_SERVICE_URL}/journey/corpus/search?q=${encodeURIComponent(query)}&limit=10`, {
+    headers: ACOUSTIC_SERVICE_TOKEN ? { Authorization: `Bearer ${ACOUSTIC_SERVICE_TOKEN}` } : {},
+    cache: 'no-store',
+    signal: AbortSignal.timeout(ARC_TIMEOUT_MS),
+  })
+  if (!response.ok) throw new Error(`[acousticService] corpus search -> ${response.status}`)
+  const raw = (await response.json()) as { tracks?: Array<{ id: string; name: string; artist: string; album?: string; spotify_uri: string; duration_ms: number }> }
+  return (raw.tracks ?? []).map((track) => ({
+    id: track.id,
+    name: track.name,
+    artist: track.artist,
+    album: track.album,
+    spotifyUri: track.spotify_uri,
+    durationMs: track.duration_ms,
+  }))
 }
 
 export interface EnsureJourneyAnchorInput {

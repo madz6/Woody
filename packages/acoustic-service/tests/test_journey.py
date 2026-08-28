@@ -14,10 +14,10 @@ sys.path.insert(0, str(SERVICE_ROOT))
 from routers.journey import (  # noqa: E402
     EnsureTrackRequest,
     JourneyNextRequest,
+    _cached_text_embedding,
     _candidate_exclusions,
     _decision_score,
     _effective_skip_weight,
-    _knownness,
     _select_with_relaxation,
     _stable_jitter,
     ensure_anchor,
@@ -29,25 +29,11 @@ class FakeConnection:
     def close(self):
         pass
 
-    def execute(self, *_args, **_kwargs):
-        return self
-
-    def fetchone(self):
-        return None
-
-    def commit(self):
-        pass
-
 
 class FakeClap:
     def embed_text(self, _text):
         vector = np.zeros(512, dtype=np.float32)
         vector[1] = 1.0
-        return vector
-
-    def embed_audio_from_bytes(self, _audio):
-        vector = np.zeros(512, dtype=np.float32)
-        vector[2] = 1.0
         return vector
 
 
@@ -57,16 +43,17 @@ def request(**overrides):
         "decision_index": 0,
         "current_track_id": "current",
         "current_track_artist": "Current Artist",
-        "anchor_track_ids": [],
-        "anchor_signals": [{"field": "anchor.note", "text": "steady tension", "source": "user_text"}],
-        "phase": "sustain",
-        "phase_description": "steady movement",
+        "start_track_id": "start",
+        "direction": "steady confidence",
     }
     values.update(overrides)
     return JourneyNextRequest(**values)
 
 
 class SelectorUnitTests(unittest.TestCase):
+    def tearDown(self):
+        _cached_text_embedding.cache_clear()
+
     def test_exclusions_always_include_current_track(self):
         self.assertEqual(_candidate_exclusions("current", ["played"]), {"current", "played"})
 
@@ -75,19 +62,14 @@ class SelectorUnitTests(unittest.TestCase):
         self.assertEqual(first, _stable_jitter("session", 4, "track"))
         self.assertNotEqual(first, _stable_jitter("session", 5, "track"))
 
-    def test_phase_weighting_changes_priority(self):
-        sustain = _decision_score(phase="sustain", transition_distance=0.1, target_distance=0.5, familiarity_fit=0, skip_penalty=0)
-        impact = _decision_score(phase="impact", transition_distance=0.1, target_distance=0.5, familiarity_fit=0, skip_penalty=0)
-        self.assertLess(sustain, impact)
+    def test_default_score_uses_transition_and_target_only(self):
+        score = _decision_score(transition_distance=0.1, target_distance=0.5, skip_penalty=0)
+        self.assertAlmostEqual(score, 0.188)
 
-    def test_target_only_scoring_omits_transition_weight(self):
-        score = _decision_score(phase="impact", transition_distance=None, target_distance=0.25, familiarity_fit=0.5, skip_penalty=0)
-        self.assertAlmostEqual(score, 0.3)
-
-    def test_knownness_balance(self):
-        self.assertEqual(_knownness("known", "new", {"known"}, set()), "known_track")
-        self.assertEqual(_knownness("new", "Artist", set(), {"artist"}), "known_artist")
-        self.assertEqual(_knownness("new", "Other", set(), set()), "unseen")
+    def test_closer_mode_prioritizes_transition_and_uses_target_as_tie_break(self):
+        close = _decision_score(transition_distance=0.1, target_distance=0.9, skip_penalty=0, closer_to_current=True)
+        farther = _decision_score(transition_distance=0.2, target_distance=0.0, skip_penalty=0, closer_to_current=True)
+        self.assertLess(close, farther)
 
     def test_skip_penalty_decays_for_three_decisions(self):
         self.assertEqual(_effective_skip_weight(0.9, 3), 0.9)
@@ -103,47 +85,43 @@ class SelectorUnitTests(unittest.TestCase):
         self.assertEqual(selected["track_id"], "other")
         self.assertEqual(level, 2)
 
-    def test_missing_current_uses_target_only_and_empty_corpus_fails_visibly(self):
+    def test_missing_current_is_rejected_instead_of_target_only_fallback(self):
         connection = FakeConnection()
+        with patch("routers.journey.get_db", return_value=connection), patch("routers.journey.load_embedding", return_value=None):
+            with self.assertRaises(HTTPException) as unsupported:
+                asyncio.run(journey_next(request()))
+        self.assertEqual(unsupported.exception.status_code, 409)
+        self.assertEqual(unsupported.exception.detail, "unsupported_current_track")
+
+    def test_supported_current_returns_coherent_decision(self):
+        connection = FakeConnection()
+        current = np.zeros(512, dtype=np.float32)
+        current[0] = 1.0
+        start = current.copy()
         candidate = np.zeros(512, dtype=np.float32)
-        candidate[1] = 1.0
-        candidate_row = {"track_id": "next", "name": "Next", "artist": "Other", "album": None, "spotify_uri": "spotify:track:next"}
+        candidate[0] = 0.9
+        candidate[1] = 0.1
+        candidate /= np.linalg.norm(candidate)
+        row = {"track_id": "next", "name": "Next", "artist": "Other", "album": None, "spotify_uri": "spotify:track:next"}
+        load_values = {"current": current, "start": start, "next": candidate}
         with (
             patch("routers.journey.get_db", return_value=connection),
-            patch("routers.journey.load_embedding", side_effect=[None, candidate]),
-            patch("routers.journey.find_nearest", return_value=[candidate_row]),
+            patch("routers.journey.load_embedding", side_effect=lambda _connection, track_id: load_values.get(track_id)),
+            patch("routers.journey.find_nearest", return_value=[row]),
             patch("routers.journey.get_clap", return_value=FakeClap()),
         ):
             result = asyncio.run(journey_next(request()))
-        self.assertEqual(result.selection_mode, "target_only")
-        self.assertFalse(result.current_embedding_available)
-        self.assertIsNone(result.transition_distance)
-        self.assertLessEqual(result.confidence, 0.65)
-
-        current = np.zeros(512, dtype=np.float32)
-        current[0] = 1.0
-        with patch("routers.journey.get_db", return_value=connection), patch("routers.journey.load_embedding", return_value=current), patch("routers.journey.find_nearest", return_value=[]), patch("routers.journey.get_clap", return_value=FakeClap()):
-            with self.assertRaises(HTTPException) as empty_corpus:
-                asyncio.run(journey_next(request()))
-            self.assertEqual(empty_corpus.exception.detail, "empty_candidate_pool")
+        self.assertEqual(result.selection_mode, "coherent")
+        self.assertTrue(result.current_embedding_available)
+        self.assertIsInstance(result.transition_distance, float)
 
     def test_anchor_endpoint_is_lookup_only(self):
         connection = FakeConnection()
-        request = EnsureTrackRequest(
-            track_id="anchor",
-            name="Track",
-            artist="Artist",
-            preview_url="https://p.scdn.co/preview.mp3",
-        )
-        with (
-            patch("routers.journey.get_db", return_value=connection),
-            patch("routers.journey.load_embedding", return_value=None),
-        ):
-            result = asyncio.run(ensure_anchor(request))
-
+        anchor_request = EnsureTrackRequest(track_id="anchor", name="Track", artist="Artist")
+        with patch("routers.journey.get_db", return_value=connection), patch("routers.journey.load_embedding", return_value=None):
+            result = asyncio.run(ensure_anchor(anchor_request))
         self.assertFalse(result.embedded)
         self.assertFalse(result.created)
-        self.assertIsNone(result.audio_source)
 
 
 class ServiceAuthenticationTests(unittest.TestCase):

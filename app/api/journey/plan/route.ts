@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     await getSpotifyAccessToken()
     const input = parseJourneyPlanInput(await request.json())
     if (!input) return badRequest('invalid_journey_setup')
-    return NextResponse.json(await createJourneyPlan(input))
+    return NextResponse.json(createJourneyPlan(input))
   } catch (error) {
     return apiError(error, 'journey_plan_failed')
   }

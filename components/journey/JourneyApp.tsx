@@ -1,8 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   initialPlaybackObserver,
   reducePlaybackObservation,
@@ -10,38 +9,27 @@ import {
   type PlaybackObserverState,
 } from '@/lib/playbackObserver'
 import {
+  clearJourneySessions,
   exportJourneySessions,
   loadJourneySessions,
   nextPairedRunSlot,
   saveJourneySession,
 } from '@/lib/journeyStorage'
-import { renderJourneyRunPrint, shareJourneyRunPrint } from '@/lib/journeyRunPrint'
-import { journeyAnchorSignals } from '@/lib/journey'
 import type {
-  JourneyDecision,
-  JourneyPhaseType,
-  JourneyPlanV1,
-  JourneyRunReview,
+  AspectCaptureV1,
+  AspectLabel,
+  JourneyAdjustmentKind,
+  JourneyAdjustmentScope,
+  JourneyDecisionV2,
+  JourneyPlanV2,
+  JourneyResearchReviewV1,
   JourneySessionMode,
-  JourneySessionV1,
-  JourneySteerKind,
-  JourneySteerScope,
-  JourneySteerV1,
-  JourneyTagCategory,
+  JourneySessionV2,
   Track,
 } from '@/lib/types'
 
-const TAG_CATEGORIES: JourneyTagCategory[] = ['function', 'movement', 'rhythm', 'texture', 'impact', 'relationship']
-const PAIR_ORDER: JourneySessionMode[][] = [
-  ['adaptive', 'control_observation'],
-  ['control_observation', 'adaptive'],
-  ['adaptive', 'control_observation'],
-  ['control_observation', 'adaptive'],
-]
-
-type Stage = 'setup' | 'preview' | 'active' | 'review'
-type ReviewAnswerKey = 'timingSupport' | 'manualManagementEffort' | 'sustainedEffortSupport' | 'preference' | 'chooseAgain'
-type Device = { id: string; is_active: boolean; name: string; type: string; volume_percent?: number }
+type Stage = 'setup' | 'active' | 'review'
+type Device = { id: string; is_active: boolean; name: string; type: string }
 type PlayerState = {
   active: boolean
   isPlaying?: boolean
@@ -50,9 +38,11 @@ type PlayerState = {
   device?: Device | null
   observedAt?: string
 }
+type DecisionResponse = Omit<JourneyDecisionV2, 'basis'>
+type SystemState = 'observing' | 'selecting' | 'queued' | 'paused' | 'error'
 
 class ClientApiError extends Error {
-  constructor(message: string, readonly retryAfterSeconds: number | null) {
+  constructor(message: string, readonly retryAfterSeconds: number | null = null) {
     super(message)
   }
 }
@@ -78,386 +68,374 @@ function post<T>(path: string, body: unknown): Promise<T> {
   })
 }
 
-function phaseFor(plan: JourneyPlanV1, startedAt: string): { type: JourneyPhaseType; description: string } {
-  const elapsedMinutes = Math.max(0, (Date.now() - Date.parse(startedAt)) / 60_000)
-  const impact = plan.impactWindows.find((window) => window.enabled && Math.abs(window.minute - elapsedMinutes) <= 1.25)
-  if (impact) return { type: 'impact', description: impact.description }
-  const phase = plan.phases.find((candidate) => candidate.accepted && elapsedMinutes >= candidate.startMinute && elapsedMinutes < candidate.endMinute)
-    ?? plan.phases.filter((candidate) => candidate.accepted).at(-1)
-  return { type: phase?.type ?? 'sustain', description: phase?.description ?? plan.intent }
-}
-
-function steeredPhase(plan: JourneyPlanV1, startedAt: string, steer: JourneySteerV1 | null): { type: JourneyPhaseType; description: string } {
-  const current = phaseFor(plan, startedAt)
-  if (!steer) return current
-  if (steer.kind === 'impact_soon') return { type: 'impact', description: 'Bring a clear, salient impact forward without abandoning the journey character.' }
-  if (steer.kind === 'hold_phase') return current
-  if (steer.kind === 'advance_phase') {
-    const phases = plan.phases.filter((phase) => phase.accepted)
-    const index = phases.findIndex((phase) => phase.type === current.type)
-    const next = phases[Math.min(phases.length - 1, Math.max(0, index + 1))]
-    return { type: next?.type ?? current.type, description: next?.description ?? current.description }
+function friendlyError(code: string): string {
+  const errors: Record<string, string> = {
+    not_connected: 'Connect Spotify to continue.',
+    no_active_device: 'Open Spotify, play something briefly, then return and retry.',
+    unsupported_track: 'Woody cannot make a reliable transition from this track yet. Choose a supported starting track.',
+    journey_selection_failed: 'Woody could not choose the next track. The session has paused instead of guessing.',
+    spotify_rate_limited: 'Spotify asked Woody to slow down. It will retry automatically.',
+    queue_failed: 'Spotify did not confirm the queue change. Woody paused to avoid adding the same track twice.',
+    spotify_start_not_confirmed: 'Spotify did not switch to the supported starting track. Nothing was recorded; retry after it begins playing.',
+    storage_failed: 'This session could not be saved in browser storage. Export existing research data before continuing.',
   }
-  return steer.text ? { ...current, description: `${current.description} New direction from the user: ${steer.text}` } : current
+  return errors[code] ?? 'Something interrupted the session. Woody paused rather than guessing.'
 }
 
-function fraction(progressMs = 0, durationMs = 0): number {
-  return durationMs > 0 ? Math.max(0, Math.min(1, progressMs / durationMs)) : 0
+function spotifyUrl(track: Track): string {
+  return track.externalUrl ?? `https://open.spotify.com/track/${track.id}`
 }
 
-function JourneySignal({ mode }: { mode: JourneySessionMode }) {
-  return (
-    <span className={`journey-signal journey-signal-${mode}`} aria-hidden="true">
-      <svg viewBox="0 0 160 160">
-        <path d="M80 8c18 0 25 16 40 21 17 6 31 1 34 19 3 17-12 25-14 41-3 17 8 27-4 40-12 13-27 3-43 12-13 8-18 18-34 9-15-9-10-24-23-34-12-9-31-6-30-24 0-17 17-22 21-37 5-17-5-29 9-39C45 3 63 8 80 8Z" />
-        <g><rect x="42" y="54" width="18" height="58" rx="9" /><rect x="71" y="45" width="18" height="70" rx="9" /><rect x="100" y="54" width="18" height="58" rx="9" /></g>
-        <circle cx="80" cy="128" r="8" />
-      </svg>
-    </span>
-  )
+function formatTime(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000))
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}`
 }
 
-function freshReview(): Omit<JourneyRunReview, 'submittedAt'> {
-  return {
-    pairNumber: 1,
-    pairLeg: 1,
-    timingSupport: 3,
-    manualManagementEffort: 3,
-    sustainedEffortSupport: 3,
-    impactMoments: '',
-    mistimedTransitions: '',
-    overallPreference: 'no_preference',
-    chooseAdaptiveAgain: false,
-  }
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
-export function JourneyApp() {
+function downloadResearchExport() {
+  const blob = new Blob([exportJourneySessions()], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `woody-research-${new Date().toISOString().slice(0, 10)}.json`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+export function JourneyApp({ researchMode = false }: { researchMode?: boolean }) {
   const [stage, setStage] = useState<Stage>('setup')
   const [connected, setConnected] = useState<boolean | null>(null)
-  const [intent, setIntent] = useState('')
-  const [durationMinutes, setDurationMinutes] = useState(35)
-  const [anchors, setAnchors] = useState<Array<{ track: Track; note: string; role: 'opener' | 'reference' }>>([])
-  const [query, setQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<Track[]>([])
-  const [plan, setPlan] = useState<JourneyPlanV1 | null>(null)
-  const [session, setSession] = useState<JourneySessionV1 | null>(null)
+  const [direction, setDirection] = useState('')
+  const [durationMinutes, setDurationMinutes] = useState(20)
   const [player, setPlayer] = useState<PlayerState | null>(null)
-  const [overrideTrack, setOverrideTrack] = useState<Track | null>(null)
-  const [status, setStatus] = useState('')
+  const [currentSupported, setCurrentSupported] = useState<boolean | null>(null)
+  const [selectedStarter, setSelectedStarter] = useState<Track | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<Track[]>([])
+  const [session, setSession] = useState<JourneySessionV2 | null>(null)
+  const [status, setStatus] = useState('Checking Spotify…')
+  const [systemState, setSystemState] = useState<SystemState>('observing')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [pairNumber, setPairNumber] = useState<1 | 2 | 3 | 4>(1)
-  const [pairLeg, setPairLeg] = useState<1 | 2>(1)
-  const mode: JourneySessionMode = PAIR_ORDER[pairNumber - 1][pairLeg - 1]
-  const [review, setReview] = useState<Omit<JourneyRunReview, 'submittedAt'>>(freshReview)
-  const [runPrint, setRunPrint] = useState<Blob | null>(null)
-  const [shareStatus, setShareStatus] = useState('')
-  const [reviewAnswers, setReviewAnswers] = useState<ReviewAnswerKey[]>([])
-  const [steerOpen, setSteerOpen] = useState(false)
-  const [steerText, setSteerText] = useState('')
-  const [steerVariant, setSteerVariant] = useState<'orb' | 'sheet'>('orb')
-  const [steerTiming, setSteerTiming] = useState<'next' | 'now'>('next')
-  const [directionScope, setDirectionScope] = useState<JourneySteerScope>('rest_of_journey')
   const [draftReady, setDraftReady] = useState(false)
+  const [nextCommitted, setNextCommitted] = useState(false)
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [adjustText, setAdjustText] = useState('')
+  const [adjustScope, setAdjustScope] = useState<JourneyAdjustmentScope>('next_track')
+  const [quickAnswer, setQuickAnswer] = useState<'yes' | 'no' | 'not_sure' | null>(null)
+  const [quickNote, setQuickNote] = useState('')
+  const [researchTiming, setResearchTiming] = useState(3)
+  const [researchEffort, setResearchEffort] = useState(3)
+  const [researchNotes, setResearchNotes] = useState('')
+  const [researchPreference, setResearchPreference] = useState<JourneyResearchReviewV1['overallPreference']>('no_preference')
 
-  const sessionRef = useRef<JourneySessionV1 | null>(null)
-  const observerRef = useRef<PlaybackObserverState>(initialPlaybackObserver(mode))
-  const pendingDecisionRef = useRef<JourneyDecision | null>(null)
-  const draftDecisionRef = useRef<JourneyDecision | null>(null)
-  const draftGenerationRef = useRef(0)
-  const activeSteerRef = useRef<JourneySteerV1 | null>(null)
+  const sessionRef = useRef<JourneySessionV2 | null>(null)
+  const observerRef = useRef<PlaybackObserverState>(initialPlaybackObserver('adaptive'))
+  const draftRef = useRef<JourneyDecisionV2 | null>(null)
+  const pendingRef = useRef<JourneyDecisionV2 | null>(null)
+  const generationRef = useRef(0)
   const selectingRef = useRef(false)
   const committingRef = useRef(false)
+  const pollingRef = useRef(false)
   const pollBlockedUntilRef = useRef(0)
-  const contextRef = useRef<{ knownTrackIds: string[]; knownArtists: string[] }>({ knownTrackIds: [], knownArtists: [] })
-  const wakeLockRef = useRef<{ release(): Promise<void>; addEventListener(type: string, listener: () => void): void } | null>(null)
+  const nextDirectionRef = useRef<string | null>(null)
+  const nextAdjustmentRef = useRef<JourneyAdjustmentKind | null>(null)
+  const wakeLockRef = useRef<{ release(): Promise<void> } | null>(null)
+  const adjustDialogRef = useRef<HTMLDivElement | null>(null)
 
-  const commitSession = useCallback((next: JourneySessionV1) => {
+  const pairedSlot = nextPairedRunSlot(loadJourneySessions())
+  const mode: JourneySessionMode = researchMode ? pairedSlot.mode : 'adaptive'
+  const startTrack = selectedStarter ?? player?.track ?? null
+  const startSource = selectedStarter ? 'supported_track_search' as const : 'current_spotify_track' as const
+
+  const commitSession = useCallback((next: JourneySessionV2) => {
     sessionRef.current = next
     setSession(next)
-    saveJourneySession(next)
+    if (!saveJourneySession(next)) {
+      setError(friendlyError('storage_failed'))
+      setSystemState('error')
+    }
   }, [])
 
-  useEffect(() => {
-    const slot = nextPairedRunSlot(loadJourneySessions())
-    api<{ connected: true }>('/api/auth/token')
-      .then(() => {
-        setConnected(true)
-        setPairNumber(slot.pairNumber)
-        setPairLeg(slot.pairLeg)
-      })
-      .catch(() => {
-        setConnected(false)
-        setPairNumber(slot.pairNumber)
-        setPairLeg(slot.pairLeg)
-      })
+  const checkTrackSupport = useCallback(async (track: Track | null | undefined) => {
+    if (!track) {
+      setCurrentSupported(null)
+      return false
+    }
+    try {
+      const result = await post<{ embedded: boolean }>('/api/journey/anchor', { track })
+      setCurrentSupported(result.embedded)
+      return result.embedded
+    } catch {
+      setCurrentSupported(false)
+      return false
+    }
   }, [])
 
+  const refreshSetup = useCallback(async () => {
+    try {
+      await api('/api/auth/token')
+      setConnected(true)
+      const state = await api<PlayerState>('/api/player/state')
+      setPlayer(state)
+      await checkTrackSupport(state.track)
+      setStatus(state.track ? 'Spotify is ready.' : 'Start a track in Spotify, then refresh.')
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : 'not_connected'
+      if (code === 'not_connected') setConnected(false)
+      else setError(friendlyError(code))
+    }
+  }, [checkTrackSupport])
+
   useEffect(() => {
-    if (stage !== 'review' || !session) return
-    let cancelled = false
-    const lastTrack = [...session.events].reverse().find((event) => event.track)?.track
-    const interventions = session.events.filter((event) => event.eventType === 'manual_transition' || event.eventType === 'user_override').length
-    renderJourneyRunPrint({
-      title: lastTrack?.name ?? 'A Woody run',
-      artist: lastTrack?.artist ?? 'Spotify journey',
-      intent: session.plan.intent,
-      durationMinutes: session.plan.durationMinutes,
-      impactMinute: session.plan.impactWindows.find((window) => window.enabled)?.minute,
-      interventions,
-      mode: session.plan.mode,
-    }).then((blob) => {
-      if (!cancelled) setRunPrint(blob)
-    }).catch(() => undefined)
-    return () => { cancelled = true }
-  }, [session, stage])
+    const timer = window.setTimeout(() => void refreshSetup(), 0)
+    return () => window.clearTimeout(timer)
+  }, [refreshSetup])
 
   const requestWakeLock = useCallback(async () => {
-    const wakeLock = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<typeof wakeLockRef.current> } }).wakeLock
-    if (!wakeLock || document.visibilityState !== 'visible') return
     try {
-      const lock = await wakeLock.request('screen')
-      wakeLockRef.current = lock
-      lock?.addEventListener('release', () => {
-        const current = sessionRef.current
-        if (!current || current.status !== 'active') return
-        commitSession({
-          ...current,
-          events: [...current.events, {
-            version: 1,
-            timestamp: new Date().toISOString(),
-            eventType: 'wake_lock_lost',
-            initiatingSource: 'system',
-          }],
-        })
-      })
+      if ('wakeLock' in navigator) {
+        wakeLockRef.current = await (navigator as Navigator & { wakeLock: { request(type: 'screen'): Promise<{ release(): Promise<void> }> } }).wakeLock.request('screen')
+      }
     } catch {
-      setStatus('Screen lock prevention was unavailable. Keep Safari visible when possible.')
+      const current = sessionRef.current
+      if (current) commitSession({
+        ...current,
+        events: [...current.events, {
+          version: 1,
+          timestamp: new Date().toISOString(),
+          eventType: 'wake_lock_lost',
+          initiatingSource: 'system',
+        }],
+      })
     }
   }, [commitSession])
 
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible' && sessionRef.current?.status === 'active') void requestWakeLock()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [requestWakeLock])
-
-  const search = async () => {
-    if (query.trim().length < 2) return
+  const searchSupported = async () => {
+    if (searchQuery.trim().length < 2) return
     setBusy(true)
     setError('')
     try {
-      const result = await api<{ tracks: Track[] }>(`/api/spotify/search?q=${encodeURIComponent(query.trim())}`)
+      const result = await api<{ tracks: Track[] }>(`/api/journey/corpus?q=${encodeURIComponent(searchQuery.trim())}`)
       setSearchResults(result.tracks)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'search_failed')
+      setError(friendlyError(caught instanceof Error ? caught.message : 'supported_track_search_failed'))
     } finally {
       setBusy(false)
     }
-  }
-
-  const addAnchor = (track: Track) => {
-    if (anchors.length >= 3 || anchors.some((anchor) => anchor.track.id === track.id)) return
-    setAnchors((current) => [...current, { track, note: '', role: current.length === 0 ? 'opener' : 'reference' }])
-    setSearchResults([])
-    setQuery('')
-  }
-
-  const buildPreview = async () => {
-    setBusy(true)
-    setError('')
-    try {
-      const result = await post<JourneyPlanV1>('/api/journey/plan', { mode, intent, durationMinutes, anchors })
-      setPlan(result)
-      setStage('preview')
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'journey_plan_failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const updateTag = (anchorIndex: number, category: JourneyTagCategory, raw: string) => {
-    if (!plan) return
-    const values = raw.split(',').map((value) => value.trim()).filter(Boolean).slice(0, 5)
-    setPlan({
-      ...plan,
-      anchors: plan.anchors.map((anchor, index) => index === anchorIndex
-        ? { ...anchor, confirmedTags: { ...anchor.confirmedTags, [category]: values } }
-        : anchor),
-    })
   }
 
   const startJourney = async () => {
-    if (!plan) return
+    if (!startTrack || direction.trim().length < 3) return
+    if (mode === 'adaptive' && !selectedStarter && currentSupported !== true) return
     setBusy(true)
     setError('')
-    setRunPrint(null)
-    setShareStatus('')
-    setStatus('Checking the active Spotify device…')
     try {
-      const deviceResult = await api<{ devices: Device[] }>('/api/player/devices')
-      const activeDevice = deviceResult.devices.find((device) => device.is_active)
-      if (!activeDevice) {
-        throw new Error('no_active_device')
+      const devices = await api<{ devices: Device[] }>('/api/player/devices')
+      const activeDevice = devices.devices.find((device) => device.is_active)
+      if (!activeDevice) throw new Error('no_active_device')
+      if (selectedStarter && player?.track?.id !== selectedStarter.id) {
+        await post('/api/player/play', { uri: selectedStarter.spotifyUri ?? `spotify:track:${selectedStarter.id}`, deviceId: activeDevice.id })
+        let confirmed: PlayerState | null = null
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          await delay(attempt === 0 ? 250 : 750)
+          const observed = await api<PlayerState>('/api/player/state')
+          if (observed.track?.id === selectedStarter.id) {
+            confirmed = observed
+            break
+          }
+        }
+        if (!confirmed) throw new Error('spotify_start_not_confirmed')
+        setPlayer(confirmed)
       }
-      contextRef.current = await api<{ knownTrackIds: string[]; knownArtists: string[] }>('/api/spotify/context')
-        .catch(() => ({ knownTrackIds: [], knownArtists: [] }))
-
-      const acceptedPlan = plan
-      setPlan(acceptedPlan)
-      if (acceptedPlan.mode === 'adaptive') {
-        setStatus('Tuning the journey…')
-        const opener = acceptedPlan.anchors.find((anchor) => anchor.role === 'opener')!
-        await post('/api/player/play', { uri: opener.track.spotifyUri ?? `spotify:track:${opener.track.id}`, deviceId: activeDevice.id })
-      }
+      const plan = await post<JourneyPlanV2>('/api/journey/plan', {
+        mode,
+        direction: direction.trim(),
+        durationMinutes,
+        startTrack,
+        startSource,
+      })
       const now = new Date().toISOString()
-      const next: JourneySessionV1 = {
-        version: 1,
-        plan: acceptedPlan,
+      const next: JourneySessionV2 = {
+        version: 2,
+        plan,
         status: 'active',
+        direction: plan.direction,
+        directionRevision: 0,
         decisions: [],
         events: [{ version: 1, timestamp: now, eventType: 'session_started', initiatingSource: 'user' }],
+        aspectCaptures: [],
         playedTrackIds: [],
-        rejectedTrackIds: [],
+        sessionExcludedTrackIds: [],
         skipPenalties: [],
-        steers: [],
+        playbackElapsedMs: 0,
         startedAt: now,
       }
-      observerRef.current = initialPlaybackObserver(acceptedPlan.mode)
-      pendingDecisionRef.current = null
-      draftDecisionRef.current = null
-      activeSteerRef.current = null
+      observerRef.current = initialPlaybackObserver(mode)
+      draftRef.current = null
+      pendingRef.current = null
       setDraftReady(false)
+      setNextCommitted(false)
+      nextDirectionRef.current = null
+      nextAdjustmentRef.current = null
+      generationRef.current += 1
       commitSession(next)
+      setSession(next)
       setStage('active')
-      setStatus(acceptedPlan.mode === 'adaptive' ? 'Woody is observing Spotify and keeping one track queued.' : 'Control run: Woody is observing only.')
+      setSystemState('observing')
+      setStatus(mode === 'adaptive' ? 'Observing the current track.' : 'Research control: observing only.')
       await requestWakeLock()
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'start_failed'
-      setError(message === 'no_active_device'
-        ? 'No active Spotify device. Open Spotify on your iPhone, play anything briefly, return here, and retry.'
-        : message)
+      const code = caught instanceof Error ? caught.message : 'start_failed'
+      setError(friendlyError(code))
+      setSystemState('error')
     } finally {
       setBusy(false)
     }
   }
 
-  const draftNext = useCallback(async (currentTrack: Track, steerOverride?: JourneySteerV1 | null) => {
+  const draftNext = useCallback(async (
+    currentTrack: Track,
+    adjustment: JourneyAdjustmentKind | null = nextAdjustmentRef.current,
+    directionOverride: string | null = nextDirectionRef.current,
+  ) => {
     const current = sessionRef.current
-    if (!current || current.status !== 'active' || current.plan.mode !== 'adaptive' || selectingRef.current || pendingDecisionRef.current || draftDecisionRef.current) return
+    if (!current || current.status !== 'active' || current.plan.mode !== 'adaptive') return
+    if (selectingRef.current || pendingRef.current || draftRef.current) return
     selectingRef.current = true
-    const generation = draftGenerationRef.current
+    const generation = generationRef.current
+    const effectiveDirection = directionOverride?.trim() || current.direction
+    const effectiveRevision = current.directionRevision + (directionOverride ? 1 : 0)
+    setSystemState('selecting')
+    setStatus('Choosing one next track…')
     try {
-      const steer = steerOverride === undefined ? activeSteerRef.current : steerOverride
-      const activePhase = steeredPhase(current.plan, current.startedAt ?? new Date().toISOString(), steer)
-      const selected = await post<JourneyDecision>('/api/journey/next', {
+      const selected = await post<DecisionResponse>('/api/journey/next', {
         sessionId: current.plan.sessionId,
         decisionIndex: current.decisions.length,
         currentTrackId: currentTrack.id,
         currentTrackArtist: currentTrack.artist,
-        anchorTrackIds: current.plan.anchors.map((anchor) => anchor.track.id),
-        anchorSignals: [
-          ...journeyAnchorSignals(current.plan.anchors),
-          ...(steer?.kind === 'change_direction' && steer.text
-            ? [{ field: 'steer.direction', text: steer.text, source: 'user_text' as const }]
-            : []),
-        ],
-        phase: activePhase.type,
-        phaseDescription: activePhase.description,
-        familiarityTarget: current.plan.familiarityTarget,
-        knownTrackIds: contextRef.current.knownTrackIds,
-        knownArtists: contextRef.current.knownArtists,
-        recentKnownness: current.decisions.slice(-10).map((item) => item.knownness),
-        excludeIds: [...new Set([...current.playedTrackIds, ...current.rejectedTrackIds])],
+        startTrackId: current.plan.startTrack.id,
+        direction: effectiveDirection,
+        adjustment: adjustment ?? undefined,
+        excludeIds: [...new Set([...current.playedTrackIds, ...current.sessionExcludedTrackIds])],
         skipPenalties: current.skipPenalties,
       })
-      if (generation !== draftGenerationRef.current) return
-      const decision = { ...selected, ...(steer ? { steerId: steer.id } : {}) }
-      draftDecisionRef.current = decision
+      if (generation !== generationRef.current) return
+      draftRef.current = {
+        ...selected,
+        basis: {
+          trackId: currentTrack.id,
+          directionRevision: effectiveRevision,
+          playbackPositionMs: observerRef.current.previous?.progressMs ?? 0,
+        },
+      }
       setDraftReady(true)
-      setStatus(steer ? 'Direction received. The next transition has changed.' : 'The next transition is shaped and waiting.')
-      return decision
+      setSystemState('observing')
+      setStatus('Next track prepared. It has not been queued yet.')
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'selection_failed'
-      setError(message)
+      const code = caught instanceof Error ? caught.message : 'journey_selection_failed'
+      setError(friendlyError(code))
+      setSystemState('error')
       const latest = sessionRef.current
       if (latest) commitSession({
         ...latest,
-        events: [...latest.events, {
-          version: 1,
-          timestamp: new Date().toISOString(),
-          eventType: 'network_error',
-          initiatingSource: 'system',
-        }],
+        status: 'paused_override',
+        events: [...latest.events, { version: 1, timestamp: new Date().toISOString(), eventType: 'network_error', initiatingSource: 'system' }],
       })
     } finally {
       selectingRef.current = false
     }
   }, [commitSession])
 
-  const commitDraft = useCallback(async (cutNow = false) => {
+  const commitDraft = useCallback(async () => {
     const current = sessionRef.current
-    const decision = draftDecisionRef.current
-    if (!current || !decision || pendingDecisionRef.current || committingRef.current) return
+    const decision = draftRef.current
+    const observedTrackId = observerRef.current.previous?.track?.id
+    if (!current || !decision || pendingRef.current || committingRef.current) return
+    const effectiveRevision = current.directionRevision + (nextDirectionRef.current ? 1 : 0)
+    if (decision.basis.trackId !== observedTrackId || decision.basis.directionRevision !== effectiveRevision) {
+      draftRef.current = null
+      setDraftReady(false)
+      generationRef.current += 1
+      if (observerRef.current.previous?.track) void draftNext(observerRef.current.previous.track)
+      return
+    }
     committingRef.current = true
     try {
-      const uri = decision.selectedTrack.spotifyUri ?? `spotify:track:${decision.selectedTrack.id}`
-      await post(cutNow ? '/api/player/play' : '/api/player/queue', { uri })
-      pendingDecisionRef.current = decision
-      draftDecisionRef.current = null
+      await post('/api/player/queue', { uri: decision.selectedTrack.spotifyUri ?? `spotify:track:${decision.selectedTrack.id}` })
+      pendingRef.current = decision
+      draftRef.current = null
       setDraftReady(false)
+      setNextCommitted(true)
       observerRef.current = {
         ...observerRef.current,
         expectedTrackId: decision.selectedTrack.id,
         expectedDecisionId: decision.decisionId,
-        expectedInitiatingSource: cutNow ? 'user' : 'woody',
       }
-      const steer = decision.steerId ? current.steers.find((item) => item.id === decision.steerId) : undefined
-      let appliedSteer = steer
-      if (steer) {
-        const remainingDecisions = steer.scope === 'next_two_tracks' ? Math.max(0, (steer.remainingDecisions ?? 2) - 1) : steer.remainingDecisions
-        appliedSteer = { ...steer, status: 'applied', remainingDecisions, appliedDecisionId: decision.decisionId }
-        if (steer.scope === 'next_track' || remainingDecisions === 0) activeSteerRef.current = null
-        else activeSteerRef.current = appliedSteer
-      }
-      const next: JourneySessionV1 = {
+      const next: JourneySessionV2 = {
         ...current,
         decisions: [...current.decisions, decision],
-        steers: steer ? current.steers.map((item) => item.id === steer.id ? appliedSteer! : item) : current.steers,
         skipPenalties: current.skipPenalties
           .map((penalty) => ({ ...penalty, decisionsRemaining: penalty.decisionsRemaining - 1 }))
           .filter((penalty) => penalty.decisionsRemaining > 0),
-        events: [...current.events, ...(!cutNow ? [{
-          version: 1 as const,
+        events: [...current.events, {
+          version: 1,
           timestamp: new Date().toISOString(),
-          eventType: 'queue_added' as const,
+          eventType: 'queue_added',
           track: decision.selectedTrack,
-          initiatingSource: 'woody' as const,
+          initiatingSource: 'woody',
           decisionId: decision.decisionId,
-        }] : []), ...(steer ? [{
-          version: 1 as const,
-          timestamp: new Date().toISOString(),
-          eventType: 'steer_applied' as const,
-          track: decision.selectedTrack,
-          initiatingSource: 'user' as const,
-          decisionId: decision.decisionId,
-        }] : [])],
+        }],
       }
+      nextDirectionRef.current = null
+      nextAdjustmentRef.current = null
       commitSession(next)
-      setStatus(cutNow ? 'Direction changed now.' : 'The next transition is committed.')
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'queue_failed')
+      setSystemState('queued')
+      setStatus('One track is queued in Spotify.')
+    } catch {
+      setError(friendlyError('queue_failed'))
+      setSystemState('error')
+      commitSession({
+        ...current,
+        status: 'paused_override',
+        events: [...current.events, { version: 1, timestamp: new Date().toISOString(), eventType: 'network_error', initiatingSource: 'system' }],
+      })
     } finally {
       committingRef.current = false
     }
+  }, [commitSession, draftNext])
+
+  const finishSession = useCallback((reason: 'user' | 'duration' = 'user') => {
+    const current = sessionRef.current
+    if (!current || current.status === 'completed') return
+    const endedAt = new Date().toISOString()
+    generationRef.current += 1
+    draftRef.current = null
+    pendingRef.current = null
+    setDraftReady(false)
+    setNextCommitted(false)
+    const eventType = reason === 'duration' ? 'duration_reached' : 'session_ended'
+    const next: JourneySessionV2 = {
+      ...current,
+      status: 'completed',
+      endedAt,
+      events: [...current.events, { version: 1, timestamp: endedAt, eventType, initiatingSource: reason === 'duration' ? 'system' : 'user' }],
+    }
+    commitSession(next)
+    void wakeLockRef.current?.release().catch(() => undefined)
+    wakeLockRef.current = null
+    setStage('review')
+    setStatus(reason === 'duration' ? 'Planned time reached. Spotify keeps playing.' : 'Woody stopped. Spotify keeps playing.')
   }, [commitSession])
 
   const pollPlayback = useCallback(async () => {
+    if (pollingRef.current || Date.now() < pollBlockedUntilRef.current) return
     const current = sessionRef.current
-    if (!current || current.status === 'completed' || Date.now() < pollBlockedUntilRef.current) return
+    if (!current || current.status === 'completed') return
+    pollingRef.current = true
     try {
       const state = await api<PlayerState>('/api/player/state')
       setPlayer(state)
@@ -471,8 +449,8 @@ export function JourneyApp() {
       const reduction = reducePlaybackObservation(observerRef.current, observation)
       observerRef.current = reduction.state
       if (reduction.consumedExpectedDecision) {
-        pendingDecisionRef.current = null
-        observerRef.current = { ...observerRef.current, expectedTrackId: null, expectedDecisionId: null, expectedInitiatingSource: null }
+        pendingRef.current = null
+        setNextCommitted(false)
       }
       const latest = sessionRef.current ?? current
       const skipPenalties = reduction.skipSignal
@@ -481,364 +459,387 @@ export function JourneyApp() {
             { trackId: reduction.skipSignal.trackId, weight: reduction.skipSignal.weight, decisionsRemaining: 3 },
           ]
         : latest.skipPenalties
-      const next: JourneySessionV1 = {
+      const playbackElapsedMs = latest.playbackElapsedMs + reduction.playbackDeltaMs
+      const next: JourneySessionV2 = {
         ...latest,
         status: reduction.overrideTrack ? 'paused_override' : latest.status,
         events: [...latest.events, ...reduction.events],
+        playbackElapsedMs,
         playedTrackIds: latest.playedTrackIds.includes(state.track.id)
           ? latest.playedTrackIds
           : [...latest.playedTrackIds, state.track.id],
-        rejectedTrackIds: reduction.skipSignal && !latest.rejectedTrackIds.includes(reduction.skipSignal.trackId)
-          ? [...latest.rejectedTrackIds, reduction.skipSignal.trackId]
-          : latest.rejectedTrackIds,
         skipPenalties,
       }
-      if (reduction.events.length > 0 || next.status !== latest.status || next.playedTrackIds.length !== latest.playedTrackIds.length) commitSession(next)
-      if (reduction.overrideTrack) {
-        setOverrideTrack(reduction.overrideTrack)
-        setStatus('Automation paused because Spotify moved somewhere unexpected.')
+      if (reduction.events.length > 0 || reduction.playbackDeltaMs > 0 || next.playedTrackIds.length !== latest.playedTrackIds.length) {
+        commitSession(next)
+      }
+      if (playbackElapsedMs >= latest.plan.durationMinutes * 60_000) {
+        sessionRef.current = next
+        finishSession('duration')
         return
       }
-      if (next.status === 'active') {
+      if (reduction.overrideTrack) {
+        generationRef.current += 1
+        draftRef.current = null
+        setDraftReady(false)
+        setSystemState('paused')
+        setStatus('Spotify moved outside Woody’s queue. Automation is paused.')
+        return
+      }
+      if (next.status === 'active' && next.plan.mode === 'adaptive') {
         const remainingMs = Math.max(0, state.track.durationMs - (state.progressMs ?? 0))
-        if (draftDecisionRef.current && !pendingDecisionRef.current && remainingMs <= 15_000) void commitDraft()
-        else if (!draftDecisionRef.current && !pendingDecisionRef.current) void draftNext(state.track)
+        if (draftRef.current && !pendingRef.current && remainingMs <= 15_000) await commitDraft()
+        else if (!draftRef.current && !pendingRef.current) await draftNext(state.track)
       }
     } catch (caught) {
       if (caught instanceof ClientApiError && caught.message === 'spotify_rate_limited') {
         pollBlockedUntilRef.current = Date.now() + (caught.retryAfterSeconds ?? 5) * 1000
-        setStatus(`Spotify asked Woody to slow down. Retrying in ${caught.retryAfterSeconds ?? 5} seconds.`)
+        setStatus(`Spotify asked Woody to wait ${caught.retryAfterSeconds ?? 5} seconds.`)
       } else {
-        setStatus('Playback observation temporarily unavailable. Retrying…')
+        setStatus('Playback observation is unavailable. No evidence is being inferred.')
       }
+    } finally {
+      pollingRef.current = false
     }
-  }, [commitDraft, commitSession, draftNext])
+  }, [commitDraft, commitSession, draftNext, finishSession])
 
   useEffect(() => {
     if (stage !== 'active') return
-    const first = window.setTimeout(() => void pollPlayback(), 800)
-    const interval = window.setInterval(() => void pollPlayback(), 5_000)
+    let cancelled = false
+    let timer: number | undefined
+    const tick = async () => {
+      await pollPlayback()
+      if (!cancelled) timer = window.setTimeout(tick, 5_000)
+    }
+    timer = window.setTimeout(tick, 800)
     return () => {
-      window.clearTimeout(first)
-      window.clearInterval(interval)
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
     }
   }, [pollPlayback, stage])
 
-  const requestSteer = async (kind: JourneySteerKind, scope: JourneySteerScope = 'next_track') => {
+  useEffect(() => {
+    if (!adjustOpen) return
+    const dialog = adjustDialogRef.current
+    const focusable = () => [...(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), input, textarea, select') ?? [])]
+    focusable()[0]?.focus()
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAdjustOpen(false)
+      if (event.key !== 'Tab') return
+      const elements = focusable()
+      if (elements.length === 0) return
+      const first = elements[0]
+      const last = elements.at(-1)!
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [adjustOpen])
+
+  const invalidateDraft = () => {
+    generationRef.current += 1
+    draftRef.current = null
+    setDraftReady(false)
+  }
+
+  const adjustNext = async (kind: JourneyAdjustmentKind) => {
     const current = sessionRef.current
     const currentTrack = player?.track
-    if (!current || current.status !== 'active' || !currentTrack || current.plan.mode !== 'adaptive') return
-    const now = new Date().toISOString()
-    const steer: JourneySteerV1 = {
-      version: 1,
-      id: crypto.randomUUID(),
-      createdAt: now,
-      kind,
-      scope,
-      ...(kind === 'change_direction' && steerText.trim() ? { text: steerText.trim() } : {}),
-      source: kind === 'change_direction' ? 'text' : 'tap',
-      status: 'pending',
-      ...(scope === 'next_two_tracks' ? { remainingDecisions: 2 } : {}),
-    }
-    if (kind === 'change_direction' && !steer.text) {
-      setError('Give Woody a short direction first.')
-      return
-    }
-    const previous = activeSteerRef.current
-    activeSteerRef.current = steer
-    draftGenerationRef.current += 1
-    draftDecisionRef.current = null
-    setDraftReady(false)
-    const next: JourneySessionV1 = {
-      ...current,
-      steers: [
-        ...current.steers.map((item) => previous && item.id === previous.id ? { ...item, status: 'superseded' as const } : item),
-        steer,
-      ],
-      events: [
-        ...current.events,
-        ...(previous ? [{
-          version: 1 as const,
-          timestamp: now,
-          eventType: 'steer_superseded' as const,
-          initiatingSource: 'user' as const,
-        }] : []),
-        {
-          version: 1,
-          timestamp: now,
-          eventType: 'steer_requested',
-          initiatingSource: 'user',
-          attribution: {
-            field: `steer.${kind}`,
-            value: steer.text ?? kind,
-            source: 'user_text',
-            recordedAt: now,
-          },
-        },
-      ],
-    }
-    commitSession(next)
-    setSteerOpen(false)
-    setSteerText('')
-    setError('')
-    const decision = await draftNext(currentTrack, steer)
-    if (decision && steerTiming === 'now') await commitDraft(true)
-  }
-
-  const revertPersistentSteer = () => {
-    const current = sessionRef.current
-    const steer = activeSteerRef.current
-    if (!current || !steer || steer.scope !== 'rest_of_journey') return
-    const now = new Date().toISOString()
-    activeSteerRef.current = null
-    draftGenerationRef.current += 1
-    draftDecisionRef.current = null
-    setDraftReady(false)
-    commitSession({
-      ...current,
-      steers: current.steers.map((item) => item.id === steer.id ? { ...item, status: 'reverted' as const } : item),
-      events: [...current.events, {
-        version: 1,
-        timestamp: now,
-        eventType: 'steer_reverted',
-        initiatingSource: 'user',
-        attribution: {
-          field: 'steer.reverted',
-          value: steer.text ?? steer.kind,
-          source: 'user_text',
-          recordedAt: now,
-        },
-      }],
-    })
-    setSteerOpen(false)
-    setStatus(pendingDecisionRef.current
-      ? 'Original journey restored after the committed next track.'
-      : 'Original journey restored.')
-    if (player?.track && !pendingDecisionRef.current) void draftNext(player.track, null)
-  }
-
-  const resumeFromOverride = async () => {
-    const current = sessionRef.current
-    if (!current || !overrideTrack) return
-    setBusy(true)
-    try {
-      const opener = current.plan.anchors.find((anchor) => anchor.role === 'opener')
-      const references = current.plan.anchors.filter((anchor) => anchor.role === 'reference' && anchor.track.id !== overrideTrack.id).slice(0, 1)
-      const resumedAnchors = [...(opener ? [opener] : []), ...references, {
-        track: overrideTrack,
-        role: 'reference' as const,
-        note: 'Adopted after a user override.',
-        suggestedTags: {},
-        confirmedTags: {},
-        attribution: [{
-          field: 'anchor.override',
-          value: overrideTrack.id,
-          source: 'behavior_observed' as const,
-          recordedAt: new Date().toISOString(),
-        }],
-      }].slice(0, 3)
+    if (!current || !currentTrack || pendingRef.current) return
+    if (kind === 'different_next' && draftRef.current) {
+      const rejected = draftRef.current.selectedTrack
       const next = {
         ...current,
-        status: 'active' as const,
-        plan: { ...current.plan, anchors: resumedAnchors },
+        sessionExcludedTrackIds: [...new Set([...current.sessionExcludedTrackIds, rejected.id])],
+        events: [...current.events, {
+          version: 1 as const,
+          timestamp: new Date().toISOString(),
+          eventType: 'candidate_rejected' as const,
+          track: rejected,
+          initiatingSource: 'user' as const,
+          decisionId: draftRef.current.decisionId,
+        }],
       }
-      observerRef.current = { ...observerRef.current, pausedForOverride: false, expectedTrackId: null, expectedDecisionId: null, expectedInitiatingSource: null }
-      pendingDecisionRef.current = null
-      draftDecisionRef.current = null
-      draftGenerationRef.current += 1
-      setDraftReady(false)
-      setOverrideTrack(null)
       commitSession(next)
-      setStatus('Resumed from the track you chose.')
-      void draftNext(overrideTrack)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'resume_failed')
-    } finally {
-      setBusy(false)
     }
+    invalidateDraft()
+    nextAdjustmentRef.current = kind
+    setAdjustOpen(false)
+    await draftNext(currentTrack, kind)
   }
 
-  const endJourney = () => {
+  const applyDirection = async () => {
     const current = sessionRef.current
-    if (!current) return
-    const endedAt = new Date().toISOString()
-    commitSession({
-      ...current,
-      status: 'completed',
-      endedAt,
-      events: [...current.events, { version: 1, timestamp: endedAt, eventType: 'session_ended', initiatingSource: 'user' }],
-    })
-    void wakeLockRef.current?.release()
-    setStage('review')
+    const currentTrack = player?.track
+    const text = adjustText.trim()
+    if (!current || !currentTrack || text.length < 3) return
+    invalidateDraft()
+    nextAdjustmentRef.current = 'change_direction'
+    if (adjustScope === 'rest_of_session') {
+      const next: JourneySessionV2 = {
+        ...current,
+        direction: text,
+        directionRevision: current.directionRevision + 1,
+        events: [...current.events, {
+          version: 1,
+          timestamp: new Date().toISOString(),
+          eventType: 'direction_changed',
+          initiatingSource: 'user',
+          attribution: { field: 'direction', value: text, source: 'user_text', recordedAt: new Date().toISOString() },
+        }],
+      }
+      commitSession(next)
+      nextDirectionRef.current = null
+      await draftNext(currentTrack, 'change_direction', null)
+    } else {
+      nextDirectionRef.current = text
+      await draftNext(currentTrack, 'change_direction', text)
+    }
+    setAdjustText('')
+    setAdjustOpen(false)
   }
 
-  const submitReview = () => {
+  const markMoment = () => {
     const current = sessionRef.current
-    if (!current || reviewAnswers.length < 5) return
-    const submittedAt = new Date().toISOString()
-    const completeReview: JourneyRunReview = { ...review, pairNumber, pairLeg, submittedAt }
+    const track = player?.track
+    if (!current || !track) return
+    const position = Math.max(0, player?.progressMs ?? 0)
+    const capture: AspectCaptureV1 = {
+      version: 1,
+      id: crypto.randomUUID(),
+      sessionId: current.plan.sessionId,
+      track,
+      capturedPositionMs: position,
+      provisionalWindowStartMs: Math.max(0, position - 6_000),
+      provisionalWindowEndMs: Math.min(track.durationMs || position + 6_000, position + 6_000),
+      directionContext: current.direction,
+      decisionId: observerRef.current.currentDecisionId ?? undefined,
+      status: 'captured_only',
+      createdAt: new Date().toISOString(),
+    }
     commitSession({
       ...current,
-      review: completeReview,
+      aspectCaptures: [...current.aspectCaptures, capture],
       events: [...current.events, {
         version: 1,
-        timestamp: submittedAt,
-        eventType: completeReview.chooseAdaptiveAgain ? 'explicit_approval' : 'explicit_rejection',
+        timestamp: capture.createdAt,
+        eventType: 'aspect_marked',
+        track,
+        rawPositionMs: position,
+        rawDurationMs: track.durationMs,
         initiatingSource: 'user',
+        decisionId: capture.decisionId,
       }],
     })
-    setStatus('Run saved locally. Complete the matched leg before changing features.')
+    setStatus(`Moment saved at ${formatTime(position)}. Label it later if useful.`)
   }
 
-  const downloadExport = () => {
-    const blob = new Blob([exportJourneySessions()], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `woody-journeys-${new Date().toISOString().slice(0, 10)}.json`
-    link.click()
-    URL.revokeObjectURL(url)
+  const updateCapture = (id: string, changes: Partial<Pick<AspectCaptureV1, 'label' | 'userText'>>) => {
+    const current = sessionRef.current
+    if (!current) return
+    commitSession({
+      ...current,
+      aspectCaptures: current.aspectCaptures.map((capture) => capture.id === id ? { ...capture, ...changes } : capture),
+    })
   }
 
-  const shareRunPrint = async () => {
-    if (!runPrint) return
-    const result = await shareJourneyRunPrint(runPrint)
-    if (result === 'shared') setShareStatus('Run print shared.')
-    if (result === 'downloaded') setShareStatus('Run print saved as PNG.')
+  const resumeAfterOverride = async () => {
+    const current = sessionRef.current
+    const track = player?.track
+    if (!current || !track) return
+    const supported = await checkTrackSupport(track)
+    if (!supported) {
+      setError(friendlyError('unsupported_track'))
+      setSystemState('error')
+      return
+    }
+    observerRef.current = { ...observerRef.current, pausedForOverride: false, previous: null }
+    const next: JourneySessionV2 = { ...current, status: 'active' }
+    commitSession(next)
+    setSystemState('observing')
+    setStatus('Resumed from the current Spotify track.')
+    await draftNext(track)
   }
 
-  const setUpNextLeg = () => {
-    const slot = nextPairedRunSlot(loadJourneySessions())
-    setPairNumber(slot.pairNumber)
-    setPairLeg(slot.pairLeg)
-    setReview(freshReview())
-    setReviewAnswers([])
+  const saveReview = () => {
+    const current = sessionRef.current
+    if (!current) return
+    const submittedAt = new Date().toISOString()
+    const next: JourneySessionV2 = {
+      ...current,
+      ...(quickAnswer ? { quickReview: { stayedWhereWanted: quickAnswer, ...(quickNote.trim() ? { note: quickNote.trim() } : {}), submittedAt } } : {}),
+      ...(researchMode ? {
+        researchReview: {
+          pairNumber: pairedSlot.pairNumber,
+          pairLeg: pairedSlot.pairLeg,
+          timingSupport: researchTiming,
+          manualManagementEffort: researchEffort,
+          transitionNotes: researchNotes.trim(),
+          overallPreference: researchPreference,
+          submittedAt,
+        },
+      } : {}),
+    }
+    commitSession(next)
     setStage('setup')
-    setPlan(null)
     setSession(null)
-    setPlayer(null)
-    setOverrideTrack(null)
-    setRunPrint(null)
-    setShareStatus('')
-    setError('')
-    setStatus('')
+    sessionRef.current = null
+    setSelectedStarter(null)
+    setQuickAnswer(null)
+    setQuickNote('')
+    void refreshSetup()
   }
 
-  const reviewTrack = session ? [...session.events].reverse().find((event) => event.track)?.track : null
-  const activePersistentSteer = session?.steers.findLast((steer) =>
-    steer.scope === 'rest_of_journey' && (steer.status === 'pending' || steer.status === 'applied'),
-  )
-  const interventionCount = session?.events.filter((event) => event.eventType === 'manual_transition' || event.eventType === 'user_override').length ?? 0
-  const impactMinute = session?.plan.impactWindows.find((window) => window.enabled)?.minute
+  const disconnect = async () => {
+    await post('/api/auth/disconnect', {})
+    setConnected(false)
+    setPlayer(null)
+    setCurrentSupported(null)
+  }
+
+  if (connected === null) {
+    return <main className="journey-v2 journey-v2-center"><div className="woody-mark" aria-hidden="true">W</div><p>Checking Spotify…</p></main>
+  }
+
+  if (!connected) {
+    return (
+      <main className="journey-v2 journey-v2-center">
+        <div className="woody-mark" aria-hidden="true">W</div>
+        <p className="eyebrow">WOODY</p>
+        <h1>Music that can change direction with you.</h1>
+        <p>Spotify plays the music. Woody chooses one supported transition at a time.</p>
+        <a className="primary-action" href="/api/auth/login">Connect Spotify</a>
+        <a className="text-link" href="/privacy">Privacy and data</a>
+      </main>
+    )
+  }
 
   return (
-    <main className={`journey-shell journey-stage-${stage}`}>
-      <header className="journey-header">
-        <div className="journey-wordmark"><span>W</span><strong>WOODY</strong></div>
-        <span className={connected ? 'status-dot status-ok' : 'status-dot'}>{connected ? 'Spotify ready' : connected === false ? 'Spotify offline' : 'Checking Spotify'}</span>
+    <main className={`journey-v2 stage-${stage}`}>
+      <header className="journey-v2-header">
+        <a href={researchMode ? '/lab' : '/'} className="woody-wordmark"><span>W</span> Woody</a>
+        <div className={`system-state state-${systemState}`} aria-live="polite"><i />{status}</div>
       </header>
 
-      <AnimatePresence mode="wait" initial={false}>
-        {connected === null && <motion.section key="checking" className="journey-loading" exit={{ y: -12 }}><JourneySignal mode="adaptive" /><span>Checking Spotify…</span></motion.section>}
-        {connected === false && (
-          <motion.section key="connect" className="journey-connect" initial={{ y: 18 }} animate={{ y: 0 }} exit={{ y: -12 }}>
-            <JourneySignal mode="adaptive" />
-            <span className="journey-kicker">ONE SMALL HANDSHAKE</span>
-            <h1>Connect the music<br />you already use.</h1>
-            <p>Woody controls the official Spotify app. Premium and an active iPhone device are required.</p>
-            <a className="journey-button journey-button-primary" href="/api/auth/login">Connect Spotify <i>↗</i></a>
-          </motion.section>
-        )}
+      {stage === 'setup' && (
+        <section className="setup-flow">
+          <div className="setup-copy">
+            <p className="eyebrow">{researchMode ? `LAB · PAIR ${pairedSlot.pairNumber}.${pairedSlot.pairLeg}` : 'START FROM WHAT IS PLAYING'}</p>
+            <h1>Where should the music go?</h1>
+            <p>Woody keeps the starting track acoustically present while moving toward your direction.</p>
+          </div>
 
-        {stage === 'setup' && connected === true && (
-          <motion.section key="setup" className="journey-stack" initial={{ x: -18 }} animate={{ x: 0 }} exit={{ x: 16 }}>
-            <div className="journey-hero"><span>COMPOSE · 01</span><h1>Where should this<br />run <em>take you?</em></h1><p>{mode === 'adaptive' ? 'Woody will lead this one and keep only one track ahead.' : 'You lead this one. Start your normal playlist or queue; Woody will only observe.'}</p></div>
+          {player?.track ? (
+            <article className={`starter-track ${currentSupported ? 'supported' : 'unsupported'}`}>
+              {player.track.albumArt && <Image src={player.track.albumArt} alt="" width={72} height={72} unoptimized />}
+              <div><small>PLAYING IN SPOTIFY</small><strong>{player.track.name}</strong><span>{player.track.artist}</span></div>
+              <b>{currentSupported ? 'SUPPORTED' : currentSupported === false ? 'NOT IN CORPUS' : 'CHECKING'}</b>
+            </article>
+          ) : (
+            <button className="empty-starter" onClick={() => void refreshSetup()}>Play something in Spotify, then refresh</button>
+          )}
 
-            {process.env.NODE_ENV === 'development' && <details className="journey-instrumentation"><summary>Test instrumentation</summary><div className="journey-grid-two"><label>Pair<select value={pairNumber} onChange={(event) => setPairNumber(Number(event.target.value) as 1 | 2 | 3 | 4)}>{[1,2,3,4].map((number) => <option key={number} value={number}>{number}</option>)}</select></label><label>Leg<select value={pairLeg} onChange={(event) => setPairLeg(Number(event.target.value) as 1 | 2)}><option value={1}>1</option><option value={2}>2</option></select></label></div></details>}
+          {selectedStarter && (
+            <article className="starter-track supported selected">
+              {selectedStarter.albumArt && <Image src={selectedStarter.albumArt} alt="" width={72} height={72} unoptimized />}
+              <div><small>SUPPORTED START</small><strong>{selectedStarter.name}</strong><span>{selectedStarter.artist}</span></div>
+              <button onClick={() => setSelectedStarter(null)}>Use current</button>
+            </article>
+          )}
 
-            <section className="journey-compose-panel">
-              <label className="journey-intent"><span>THE FEELING</span><textarea value={intent} onChange={(event) => setIntent(event.target.value)} placeholder="Patient at first. Precise when it opens." maxLength={1000} /></label>
-              <div className="journey-duration"><div><span>PLANNED DURATION</span><strong>{durationMinutes}<small>min</small></strong></div><input aria-label="Planned duration" type="range" min="10" max="120" step="1" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} /><div className="journey-duration-ticks"><span>10</span><span>35</span><span>60</span><span>90</span><span>120</span></div><div className="journey-presets">{[20,35,50].map((value) => <button key={value} className={durationMinutes === value ? 'active' : ''} onClick={() => setDurationMinutes(value)}>{value} min</button>)}</div></div>
+          {(currentSupported === false || !player?.track || selectedStarter) && (
+            <section className="supported-search">
+              <label htmlFor="supported-search">Choose a track Woody can hear</label>
+              <div><input id="supported-search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void searchSupported() }} placeholder="Track or artist" /><button disabled={busy} onClick={() => void searchSupported()}>Search</button></div>
+              <div className="supported-results">{searchResults.map((track) => <button key={track.id} onClick={() => setSelectedStarter(track)}><span><strong>{track.name}</strong><small>{track.artist}</small></span><b>Use</b></button>)}</div>
             </section>
+          )}
 
-            <section className="journey-anchors">
-              <div className="journey-section-heading"><div><span>DIRECTION</span><h2>Anchor tracks</h2></div><strong>{anchors.length} / 3</strong></div>
-              {anchors.map((anchor, index) => (
-                <article className="anchor-row" key={anchor.track.id}>
-                  <span className="anchor-art">{anchor.track.albumArt && <Image src={anchor.track.albumArt} alt="" width={88} height={88} unoptimized />}</span>
-                  <div className="anchor-copy"><strong>{anchor.track.name}</strong><span>{anchor.track.artist}</span><textarea value={anchor.note} onChange={(event) => setAnchors((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, note: event.target.value } : item))} placeholder="What should Woody take from this?" /></div>
-                  <div className="anchor-actions"><label><input type="radio" checked={anchor.role === 'opener'} onChange={() => setAnchors((current) => current.map((item, itemIndex) => ({ ...item, role: itemIndex === index ? 'opener' : 'reference' })))} /> Opener</label><button onClick={() => setAnchors((current) => current.filter((item) => item.track.id !== anchor.track.id))}>Remove</button></div>
-                </article>
-              ))}
-              {anchors.length < 3 && <div className="search-box"><div className="search-line"><input aria-label="Search Spotify" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void search() }} placeholder="Search a track or artist" /><button onClick={() => void search()} disabled={busy}>Search</button></div><div className="search-results">{searchResults.map((track) => <button className="search-result" key={track.id} onClick={() => addAnchor(track)}>{track.albumArt ? <Image src={track.albumArt} alt="" width={46} height={46} unoptimized /> : <i />}<span><strong>{track.name}</strong><small>{track.artist}</small></span><b>+</b></button>)}</div></div>}
-            </section>
-            <button className="journey-button journey-button-primary journey-main-action" disabled={busy || intent.trim().length < 3 || anchors.length < 1} onClick={() => void buildPreview()}>{busy ? 'Listening to the shape…' : 'Preview the journey'} <i>→</i></button>
-          </motion.section>
-        )}
+          <label className="direction-field">
+            <span>DIRECTION</span>
+            <textarea value={direction} onChange={(event) => setDirection(event.target.value)} maxLength={1000} placeholder="Relaxed and good, but keep the confidence and rhythmic pull of this track." />
+          </label>
 
-        {stage === 'preview' && plan && (
-          <motion.section key="preview" className="journey-stack" initial={{ x: 18 }} animate={{ x: 0 }} exit={{ x: -16 }}>
-            <div className="journey-hero"><span>PREVIEW · 02</span><h1>The arc, not<br /><em>the surprise.</em></h1><p>Upcoming tracks stay hidden. Tap any part of the shape to tune it.</p></div>
-            <section className="journey-shape">
-              <svg viewBox="0 0 340 170" aria-hidden="true"><path d="M12 145C45 126 56 73 104 89s55-61 104-37 58 70 120 5" />{plan.phases.filter((phase) => phase.accepted).slice(0, 4).map((phase, index) => <circle key={phase.id} cx={[12,104,208,328][index]} cy={[145,89,52,57][index]} r="5" />)}</svg>
-              <div>{plan.phases.filter((phase) => phase.accepted).slice(0, 4).map((phase) => <span key={phase.id}>{phase.label}</span>)}</div>
-            </section>
-            <details className="journey-editor-group journey-preview-tune"><summary><span><small>OPTIONAL DETAIL</small><strong>Fine-tune the phases</strong></span><i>+</i></summary><div>{plan.phases.map((phase, index) => <details className="phase-editor" key={phase.id}><summary><input aria-label={`Use ${phase.label} phase`} type="checkbox" checked={phase.accepted} onClick={(event) => event.stopPropagation()} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, accepted: event.target.checked } : item) })} /><span><strong>{phase.label}</strong><small>{phase.startMinute}–{phase.endMinute} min</small></span><i>+</i></summary><textarea aria-label={`${phase.label} description`} value={phase.description} onChange={(event) => setPlan({ ...plan, phases: plan.phases.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item) })} /></details>)}</div></details>
-            <section className="journey-balance"><div><span>FAMILIAR GROUND</span><strong>{Math.round(plan.familiarityTarget * 100)}<small> / {100 - Math.round(plan.familiarityTarget * 100)} discovery</small></strong></div><input aria-label="Familiarity balance" type="range" min="0" max="100" value={Math.round(plan.familiarityTarget * 100)} onChange={(event) => setPlan({ ...plan, familiarityTarget: Number(event.target.value) / 100 })} /></section>
-            <section className="journey-impact"><div className="journey-section-heading"><div><span>IMPACT WINDOWS</span><h2>Moments with weight</h2></div></div><p>Proposed moments of salience—not measured dopamine.</p>{plan.impactWindows.map((window, index) => <label key={window.id}><input type="checkbox" checked={window.enabled} onChange={(event) => setPlan({ ...plan, impactWindows: plan.impactWindows.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: event.target.checked } : item) })} /><span>around</span><input aria-label="Impact minute" type="number" min="1" max={plan.durationMinutes - 1} value={window.minute} onChange={(event) => setPlan({ ...plan, impactWindows: plan.impactWindows.map((item, itemIndex) => itemIndex === index ? { ...item, minute: Number(event.target.value) } : item) })} /><strong>min</strong></label>)}</section>
-            <details className="journey-tags"><summary><span><small>OPTIONAL DETAIL</small><strong>Fine-tune what Woody heard</strong></span><i>+</i></summary>{plan.anchors.map((anchor, anchorIndex) => <article key={anchor.track.id}><h3>{anchor.track.name}</h3>{TAG_CATEGORIES.map((category) => <label key={category}><span>{category}</span><input value={(anchor.confirmedTags[category] ?? anchor.suggestedTags[category] ?? []).join(', ')} onChange={(event) => updateTag(anchorIndex, category, event.target.value)} /></label>)}</article>)}</details>
-            <div className="journey-actions"><button className="journey-button journey-button-quiet" onClick={() => setStage('setup')}>Back</button><button className="journey-button journey-button-primary" disabled={busy} onClick={() => void startJourney()}>{busy ? 'Preparing Spotify…' : mode === 'adaptive' ? 'Start this run' : 'Begin observation'} <i>→</i></button></div>
-          </motion.section>
-        )}
+          <section className="duration-field">
+            <div><span>PLANNED PLAYBACK</span><strong>{durationMinutes} min</strong></div>
+            <input aria-label="Planned playback duration" type="range" min="10" max="120" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} />
+          </section>
 
-        {stage === 'active' && session && (
-          <motion.section key="active" className="journey-active" initial={{ scale: .97 }} animate={{ scale: 1 }} exit={{ scale: .98 }}>
-            <div className="journey-live"><span className="live-pulse" /><span>{session.status === 'paused_override' ? 'PAUSED FOR YOU' : session.plan.mode === 'adaptive' ? 'WOODY IS MOVING' : 'WOODY IS LISTENING'}</span></div>
-            <div className="now-artwork">{player?.track?.albumArt ? <Image src={player.track.albumArt} alt={`${player.track.name} artwork`} width={640} height={640} unoptimized priority /> : <div className="now-artwork-empty" />}<JourneySignal mode={session.plan.mode} /></div>
-            <div className="now-copy"><span>NOW PLAYING</span><h1>{player?.track?.name ?? 'Waiting for Spotify…'}</h1><p>{player?.track?.artist ?? 'Open Spotify and start playback'}</p>{player?.track && <div className="progress-track"><i style={{ width: `${fraction(player.progressMs, player.track.durationMs) * 100}%` }} /></div>}</div>
-            <div className="journey-observation" aria-live="polite"><span className="observation-orbit" /><p><strong>{session.plan.mode === 'adaptive' ? draftReady ? 'Next move shaped' : 'One decision ahead' : 'Observation only'}</strong><small>{status || 'Headphone, Watch, and phone changes are observed automatically.'}</small></p></div>
-            {session.plan.mode === 'adaptive' && !overrideTrack && <>
-              <button className="journey-steer-trigger" onClick={() => setSteerOpen(true)}><span>STEER</span><i>↗</i></button>
-              {steerOpen && <motion.aside className={`journey-steer-panel journey-steer-${steerVariant}`} initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}>
-                <div className="journey-steer-heading"><span>STEER THE JOURNEY</span><button onClick={() => setSteerOpen(false)} aria-label="Close steering">×</button></div>
-                {process.env.NODE_ENV === 'development' && <div className="steer-variant-switch"><button className={steerVariant === 'orb' ? 'active' : ''} onClick={() => setSteerVariant('orb')}>Orb</button><button className={steerVariant === 'sheet' ? 'active' : ''} onClick={() => setSteerVariant('sheet')}>Sheet</button></div>}
-                <div className="steer-timing"><button className={steerTiming === 'next' ? 'active' : ''} onClick={() => setSteerTiming('next')}>NEXT TRACK</button><button className={steerTiming === 'now' ? 'active' : ''} onClick={() => setSteerTiming('now')}>CUT NOW</button></div>
-                <div className="steer-actions">
-                  <button onClick={() => void requestSteer('impact_soon')}><i>»</i><span>Bring impact forward</span></button>
-                  <button onClick={() => void requestSteer('hold_phase')}><i>Ⅱ</i><span>Stay here</span></button>
-                  <button onClick={() => void requestSteer('advance_phase')}><i>›</i><span>Move on</span></button>
-                </div>
-                <div className="steer-direction"><label><span>CHANGE DIRECTION</span><input value={steerText} onChange={(event) => setSteerText(event.target.value)} placeholder="Darker, stranger, more open…" maxLength={240} /></label><div><button className={directionScope === 'rest_of_journey' ? 'active' : ''} onClick={() => setDirectionScope('rest_of_journey')}>Rest of run</button><button className={directionScope === 'next_two_tracks' ? 'active' : ''} onClick={() => setDirectionScope('next_two_tracks')}>Short detour</button></div><button className="steer-direction-apply" onClick={() => void requestSteer('change_direction', directionScope)}>Apply direction</button>{activePersistentSteer && <button className="steer-direction-revert" onClick={revertPersistentSteer}>Return to original journey</button>}</div>
-              </motion.aside>}
-            </>}
-            {overrideTrack && <motion.aside className="journey-override" initial={{ y: '100%' }} animate={{ y: 0 }}><span>YOU CHANGED DIRECTION</span><h2>Woody stopped rather than fighting you.</h2><p>Continue from <strong>{overrideTrack.name}</strong>, or finish here.</p><button className="journey-button journey-button-primary" disabled={busy} onClick={() => void resumeFromOverride()}>Follow this direction</button><button className="journey-button journey-button-quiet" onClick={endJourney}>End the run</button></motion.aside>}
-            {!overrideTrack && <button className="journey-end" onClick={endJourney}>End run</button>}
-          </motion.section>
-        )}
+          {researchMode && <p className="lab-mode">This leg runs in <strong>{mode === 'adaptive' ? 'adaptive' : 'control observation'}</strong> mode. Test controls and diagnostics remain on this route only.</p>}
 
-        {stage === 'review' && session && (
-          <motion.section key="review" className="journey-stack journey-afterglow" initial={{ y: 22 }} animate={{ y: 0 }} exit={{ y: -12 }}>
-            <section className="afterglow-visual"><span className="afterglow-art">{reviewTrack?.albumArt && <Image src={reviewTrack.albumArt} alt="" width={120} height={120} unoptimized />}</span><svg viewBox="0 0 300 110" aria-hidden="true"><path d="M2 94C40 77 56 86 80 58s46 20 82-17 57 18 85-8 40-14 51-28" /><circle cx="162" cy="41" r="6" /></svg>{impactMinute && <strong>~{impactMinute} min</strong>}</section>
-            <div className="journey-hero afterglow-heading"><span>AFTERGLOW · 04</span><h1>Your run left<br /><em>a shape.</em></h1><p>Woody observed {session.playedTrackIds.length} tracks and {interventionCount} manual {interventionCount === 1 ? 'change' : 'changes'}. Your answers remain a separate evidence channel.</p></div>
+          <button className="primary-action" disabled={busy || !startTrack || direction.trim().length < 3 || (mode === 'adaptive' && !selectedStarter && currentSupported !== true)} onClick={() => void startJourney()}>
+            {busy ? 'Starting…' : mode === 'adaptive' ? 'Start listening' : 'Start control observation'}
+          </button>
+          {error && <div className="journey-v2-error" role="alert"><strong>Woody paused.</strong><span>{error}</span></div>}
 
-            <section className="review-signals">
-              {([['timingSupport', 'Did the timing support you?', 'Not at all', 'Exactly'], ['manualManagementEffort', 'How much did you manage it?', 'None', 'Constant'], ['sustainedEffortSupport', 'Did it carry sustained effort?', 'Not enough', 'Carried me']] as const).map(([field, label, low, high]) => <fieldset key={field}><legend>{label}</legend><div>{[1,2,3,4,5].map((value) => <button type="button" aria-label={`${label}: ${value} of 5`} key={value} className={reviewAnswers.includes(field) && review[field] === value ? 'active' : ''} onClick={() => { setReview({ ...review, [field]: value }); setReviewAnswers((current) => current.includes(field) ? current : [...current, field]) }}>{value}</button>)}</div><p><span>{low}</span><span>{high}</span></p></fieldset>)}
-            </section>
+          <footer className="data-controls">
+            <a href="/privacy">Privacy and data</a>
+            {researchMode && <button onClick={downloadResearchExport}>Export research JSON</button>}
+            <button onClick={() => { clearJourneySessions(); setStatus('Local Woody sessions deleted.') }}>Delete local sessions</button>
+            <button onClick={() => void disconnect()}>Disconnect Spotify</button>
+          </footer>
+        </section>
+      )}
 
-            <section className="review-moments"><label><span><i>✦</i><strong>A moment that landed</strong><small>Optional, but especially valuable</small></span><textarea value={review.impactMoments} onChange={(event) => setReview({ ...review, impactMoments: event.target.value })} placeholder="What happened, and when?" /></label><label><span><i>≈</i><strong>A moment that broke it</strong><small>Mistimed, generic, or distracting</small></span><textarea value={review.mistimedTransitions} onChange={(event) => setReview({ ...review, mistimedTransitions: event.target.value })} placeholder="What felt wrong?" /></label></section>
+      {stage === 'active' && session && (
+        <section className="active-flow">
+          <div className="active-artwork">
+            {player?.track?.albumArt ? <a href={spotifyUrl(player.track)} target="_blank" rel="noreferrer"><Image src={player.track.albumArt} alt={`${player.track.name} cover`} width={640} height={640} unoptimized /></a> : <div className="artwork-empty" />}
+          </div>
+          <div className="active-information">
+            <a className="spotify-attribution" href={player?.track ? spotifyUrl(player.track) : 'https://open.spotify.com'} target="_blank" rel="noreferrer">OPEN IN SPOTIFY ↗</a>
+            <h1>{player?.track?.name ?? 'Waiting for Spotify'}</h1>
+            <p>{player?.track?.artist}</p>
+            <div className="track-progress"><i style={{ width: `${player?.track?.durationMs ? Math.min(100, ((player.progressMs ?? 0) / player.track.durationMs) * 100) : 0}%` }} /></div>
+            <div className="session-time"><span>Woody playback</span><strong>{formatTime(session.playbackElapsedMs)} / {session.plan.durationMinutes}:00</strong></div>
+            <p className="current-direction"><span>DIRECTION</span>{session.direction}</p>
+          </div>
+          <div className="live-actions">
+            {session.plan.mode === 'adaptive' && <button onClick={() => setAdjustOpen(true)}>Adjust next</button>}
+            <button onClick={markMoment}>Mark this moment</button>
+            <button className="quiet-action" onClick={() => finishSession('user')}>End</button>
+          </div>
+          {session.aspectCaptures.length > 0 && <p className="capture-count">{session.aspectCaptures.length} {session.aspectCaptures.length === 1 ? 'moment' : 'moments'} saved</p>}
+          {session.status === 'paused_override' && (
+            <section className="override-notice" role="status"><strong>Automation paused</strong><p>Spotify moved somewhere Woody did not queue. Resume only if the current track is supported.</p><button onClick={resumeAfterOverride}>Check and resume here</button><button onClick={() => finishSession('user')}>End session</button></section>
+          )}
+          {error && <div className="journey-v2-error" role="alert"><strong>Woody paused.</strong><span>{error}</span></div>}
+        </section>
+      )}
 
-            <fieldset className="review-preference"><legend>Which would you choose for the next matched run?</legend><div>{([['adaptive', 'Woody'], ['control_observation', 'My queue'], ['no_preference', 'Not sure']] as const).map(([value, label]) => <button type="button" key={value} className={reviewAnswers.includes('preference') && review.overallPreference === value ? 'active' : ''} onClick={() => { setReview({ ...review, overallPreference: value }); setReviewAnswers((current) => current.includes('preference') ? current : [...current, 'preference']) }}>{label}</button>)}</div></fieldset>
-            <section className="review-return"><span><small>NEXT TIME</small><strong>Would you take Woody again?</strong></span><div><button className={reviewAnswers.includes('chooseAgain') && review.chooseAdaptiveAgain ? 'active' : ''} onClick={() => { setReview({ ...review, chooseAdaptiveAgain: true }); setReviewAnswers((current) => current.includes('chooseAgain') ? current : [...current, 'chooseAgain']) }}>Yes</button><button className={reviewAnswers.includes('chooseAgain') && !review.chooseAdaptiveAgain ? 'active' : ''} onClick={() => { setReview({ ...review, chooseAdaptiveAgain: false }); setReviewAnswers((current) => current.includes('chooseAgain') ? current : [...current, 'chooseAgain']) }}>No</button></div></section>
+      {stage === 'review' && session && (
+        <section className="review-flow">
+          <p className="eyebrow">SESSION ENDED · SPOTIFY CONTINUES</p>
+          <h1>Did this stay where you wanted?</h1>
+          <div className="quick-review">{(['yes', 'no', 'not_sure'] as const).map((answer) => <button key={answer} className={quickAnswer === answer ? 'active' : ''} onClick={() => setQuickAnswer(answer)}>{answer === 'not_sure' ? 'Not sure' : answer[0].toUpperCase() + answer.slice(1)}</button>)}</div>
+          <textarea value={quickNote} onChange={(event) => setQuickNote(event.target.value)} placeholder="Optional: what stayed right or moved too far?" />
 
-            <button className="journey-button journey-button-primary journey-main-action" disabled={reviewAnswers.length < 5 || Boolean(session.review)} onClick={submitReview}>{session.review ? 'Evidence saved' : reviewAnswers.length < 5 ? `Answer ${5 - reviewAnswers.length} more` : 'Save this run'} <i>{session.review ? '✓' : '→'}</i></button>
-            <section className="journey-run-print"><div><span>RUN PRINT</span><h2>A shareable trace,<br />not your private data.</h2><p>No route, listening history, or written reflection is included.</p></div><button disabled={!runPrint} onClick={() => void shareRunPrint()}>{runPrint ? 'Share or save PNG' : 'Building print…'} <i>↗</i></button>{shareStatus && <small>{shareStatus}</small>}</section>
-            <button className="journey-button journey-button-quiet" onClick={setUpNextLeg}>Set up the next run</button>
-            <details className="journey-data-tools"><summary>Session data</summary><button onClick={downloadExport}>Export journey JSON</button></details>
-          </motion.section>
-        )}
-      </AnimatePresence>
+          {session.aspectCaptures.length > 0 && <section className="captured-moments"><div><span>MARKED MOMENTS</span><p>Label only the ones worth carrying forward.</p></div>{session.aspectCaptures.map((capture) => <article key={capture.id}><strong>{capture.track.name} · {formatTime(capture.capturedPositionMs)}</strong><select aria-label={`Aspect from ${capture.track.name}`} value={capture.label ?? ''} onChange={(event) => updateCapture(capture.id, { label: (event.target.value || undefined) as AspectLabel | undefined })}><option value="">What mattered?</option><option value="beat">Beat</option><option value="bass">Bass</option><option value="melody">Melody</option><option value="vocal">Vocal</option><option value="instrument_sound">Instrument / sound</option><option value="other">Other</option></select><input value={capture.userText ?? ''} onChange={(event) => updateCapture(capture.id, { userText: event.target.value })} placeholder="Optional detail" /></article>)}</section>}
 
-      {error && <div className="journey-error" role="alert"><strong>Woody hit a snag.</strong><span>{error}</span></div>}
+          {researchMode && <section className="research-review"><h2>Lab evidence</h2><label>Timing support <input type="range" min="1" max="5" value={researchTiming} onChange={(event) => setResearchTiming(Number(event.target.value))} /><b>{researchTiming}/5</b></label><label>Manual management <input type="range" min="1" max="5" value={researchEffort} onChange={(event) => setResearchEffort(Number(event.target.value))} /><b>{researchEffort}/5</b></label><textarea value={researchNotes} onChange={(event) => setResearchNotes(event.target.value)} placeholder="Transition notes" /><label>Preference<select value={researchPreference} onChange={(event) => setResearchPreference(event.target.value as JourneyResearchReviewV1['overallPreference'])}><option value="adaptive">Adaptive</option><option value="control_observation">My queue</option><option value="no_preference">No preference</option></select></label></section>}
+
+          <button className="primary-action" onClick={saveReview}>{quickAnswer || researchMode ? 'Save and finish' : 'Finish without feedback'}</button>
+        </section>
+      )}
+
+      {adjustOpen && (
+        <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setAdjustOpen(false) }}>
+          <div className="adjust-dialog" ref={adjustDialogRef} role="dialog" aria-modal="true" aria-labelledby="adjust-title">
+            <header><div><span>NEXT DECISION</span><h2 id="adjust-title">Adjust next</h2></div><button aria-label="Close" onClick={() => setAdjustOpen(false)}>×</button></header>
+            <button disabled={nextCommitted} onClick={() => void adjustNext('closer_to_current')}><strong>Keep closer to this</strong><span>Prioritize acoustic proximity to the current track.</span></button>
+            <button disabled={nextCommitted || !draftReady} onClick={() => void adjustNext('different_next')}><strong>Choose another</strong><span>{nextCommitted ? 'Spotify already has the next track.' : 'Reject the prepared candidate for this session.'}</span></button>
+            <label><span>CHANGE DIRECTION</span><input value={adjustText} onChange={(event) => setAdjustText(event.target.value)} placeholder="Say exactly what should change" maxLength={1000} /></label>
+            <div className="scope-switch"><button className={adjustScope === 'next_track' ? 'active' : ''} onClick={() => setAdjustScope('next_track')}>Next track</button><button className={adjustScope === 'rest_of_session' ? 'active' : ''} onClick={() => setAdjustScope('rest_of_session')}>Rest of session</button></div>
+            <button className="apply-adjustment" disabled={adjustText.trim().length < 3} onClick={() => void applyDirection()}>Apply direction</button>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

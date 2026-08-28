@@ -200,6 +200,7 @@ export function spotifyTrackToWoody(t: any): Track {
     album: t.album?.name ?? '',
     albumArt: t.album?.images?.[0]?.url,
     spotifyUri: t.uri,
+    externalUrl: t.external_urls?.spotify,
     durationMs: t.duration_ms,
     previewUrl: t.preview_url,
   }

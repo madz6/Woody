@@ -5,60 +5,58 @@ import type { Track } from './types'
 const first: Track = { id: 'first', name: 'First', artist: 'A', album: '', durationMs: 200_000 }
 const next: Track = { id: 'next', name: 'Next', artist: 'B', album: '', durationMs: 180_000 }
 
-function observed(track: Track, progressMs: number): PlaybackObservation {
-  return { track, progressMs, isPlaying: true, observedAt: '2026-07-14T10:00:00.000Z' }
+function observed(track: Track, progressMs: number, seconds = 0): PlaybackObservation {
+  return { track, progressMs, isPlaying: true, observedAt: `2026-07-14T10:00:${String(seconds).padStart(2, '0')}.000Z` }
 }
 
 describe('playback event reducer', () => {
-  it('records exact listened fraction at natural completion', () => {
+  it('measures playback from Spotify progress rather than wall time', () => {
     let state = initialPlaybackObserver('adaptive')
-    state = reducePlaybackObservation(state, observed(first, 0)).state
-    state = reducePlaybackObservation(state, observed(first, 196_000)).state
-    const result = reducePlaybackObservation({ ...state, expectedTrackId: next.id }, observed(next, 0))
+    state = reducePlaybackObservation(state, observed(first, 10_000, 0)).state
+    const result = reducePlaybackObservation(state, observed(first, 15_200, 5))
+    expect(result.playbackDeltaMs).toBe(5_200)
+  })
+
+  it('records natural completion without a skip penalty', () => {
+    let state = initialPlaybackObserver('adaptive')
+    state = reducePlaybackObservation(state, observed(first, 196_000, 0)).state
+    const result = reducePlaybackObservation({ ...state, expectedTrackId: next.id }, observed(next, 0, 5))
     expect(result.events[0].eventType).toBe('track_completed')
-    expect(result.events[0].listenedFraction).toBe(0.98)
+    expect(result.events[1].eventType).toBe('expected_queued_transition')
     expect(result.skipSignal).toBeUndefined()
   })
 
-  it('treats an early headphone or Watch change as a continuous skip signal', () => {
+  it('attributes an early jump to the queued track to the user', () => {
     let state = initialPlaybackObserver('adaptive')
-    state = reducePlaybackObservation(state, observed(first, 50_000)).state
-    const result = reducePlaybackObservation({ ...state, expectedTrackId: next.id }, observed(next, 0))
-    expect(result.events[0].eventType).toBe('manual_transition')
-    expect(result.events[0].listenedFraction).toBe(0.25)
+    state = reducePlaybackObservation(state, observed(first, 50_000, 0)).state
+    const result = reducePlaybackObservation({ ...state, expectedTrackId: next.id, expectedDecisionId: 'decision' }, observed(next, 0, 5))
+    expect(result.events[0]).toMatchObject({ eventType: 'manual_transition', initiatingSource: 'user' })
     expect(result.skipSignal).toEqual({ trackId: first.id, weight: 0.75 })
     expect(result.overrideTrack).toBeUndefined()
   })
 
-  it('pauses adaptive queueing on an unexpected playlist override', () => {
+  it('does not infer completion or rejection across an observation gap', () => {
     let state = initialPlaybackObserver('adaptive')
-    state = reducePlaybackObservation(state, observed(first, 80_000)).state
-    const result = reducePlaybackObservation({ ...state, expectedTrackId: 'woody-choice' }, observed(next, 0))
+    state = reducePlaybackObservation(state, observed(first, 50_000, 0)).state
+    const result = reducePlaybackObservation({ ...state, expectedTrackId: next.id }, observed(next, 0, 30))
+    expect(result.events[0].eventType).toBe('observation_gap')
+    expect(result.playbackDeltaMs).toBe(0)
+    expect(result.skipSignal).toBeUndefined()
+  })
+
+  it('does not count same-track progress across an observation gap', () => {
+    let state = initialPlaybackObserver('adaptive')
+    state = reducePlaybackObservation(state, observed(first, 50_000, 0)).state
+    const result = reducePlaybackObservation(state, observed(first, 80_000, 30))
+    expect(result.events[0].eventType).toBe('observation_gap')
+    expect(result.playbackDeltaMs).toBe(0)
+  })
+
+  it('pauses adaptive queueing on an unexpected track', () => {
+    let state = initialPlaybackObserver('adaptive')
+    state = reducePlaybackObservation(state, observed(first, 80_000, 0)).state
+    const result = reducePlaybackObservation({ ...state, expectedTrackId: 'woody-choice' }, observed(next, 0, 5))
     expect(result.events.some((event) => event.eventType === 'user_override')).toBe(true)
     expect(result.state.pausedForOverride).toBe(true)
-    expect(result.overrideTrack?.id).toBe(next.id)
-  })
-
-  it('observes control queue changes without calling them overrides', () => {
-    let state = initialPlaybackObserver('control_observation')
-    state = reducePlaybackObservation(state, observed(first, 80_000)).state
-    const result = reducePlaybackObservation(state, observed(next, 0))
-    expect(result.events.some((event) => event.eventType === 'user_override')).toBe(false)
-    expect(result.state.pausedForOverride).toBe(false)
-  })
-
-  it('records an expected Cut now transition as user initiated', () => {
-    let state = initialPlaybackObserver('adaptive')
-    state = reducePlaybackObservation(state, observed(first, 50_000)).state
-    const result = reducePlaybackObservation({
-      ...state,
-      expectedTrackId: next.id,
-      expectedDecisionId: 'decision-cut',
-      expectedInitiatingSource: 'user',
-    }, observed(next, 0))
-    expect(result.events[0].eventType).toBe('manual_transition')
-    expect(result.events[0].initiatingSource).toBe('user')
-    expect(result.events[1].initiatingSource).toBe('user')
-    expect(result.overrideTrack).toBeUndefined()
   })
 })

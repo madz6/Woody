@@ -3,3 +3,8 @@ services:
     build: .
     ports:
       - "8765:8765"
+    environment:
+      WOODY_DB_PATH: /data/woody.db
+      WOODY_SERVICE_TOKEN: ${WOODY_SERVICE_TOKEN:?Set WOODY_SERVICE_TOKEN before starting Docker}
+    volumes:
+      - ./data:/data:ro

@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { apiError, badRequest } from '@/lib/apiError'
-import {
-  selectJourneyNext,
-  type AcousticJourneyPhase,
-  type AcousticKnownness,
-} from '@/lib/acousticService'
+import { selectJourneyNext, type AcousticJourneyAdjustment } from '@/lib/acousticService'
 import { getSpotifyAccessToken, spotifyFetch } from '@/lib/auth/spotifySession'
 import { spotifyTrackToWoody } from '@/lib/spotify'
-import type { AttributionProvenance, JourneyDecision } from '@/lib/types'
 
-const PHASES = new Set<AcousticJourneyPhase>(['settle', 'build', 'sustain', 'impact', 'release'])
-const KNOWNNESS = new Set<AcousticKnownness>(['known_track', 'known_artist', 'unseen'])
-const PROVENANCE = new Set<AttributionProvenance>(['user_text', 'model_suggested', 'user_confirmed', 'behavior_observed', 'system_inferred'])
+const ADJUSTMENTS = new Set<AcousticJourneyAdjustment>(['closer_to_current', 'different_next', 'change_direction'])
 
 function strings(value: unknown, max: number): string[] | null {
   if (!Array.isArray(value) || value.length > max || !value.every((item) => typeof item === 'string')) return null
@@ -28,49 +21,25 @@ export async function POST(request: NextRequest) {
     const currentTrackArtist = typeof body.currentTrackArtist === 'string' && body.currentTrackArtist.trim().length <= 500
       ? body.currentTrackArtist.trim()
       : null
-    const anchorTrackIds = strings(body.anchorTrackIds, 3)
-    const anchorSignals = Array.isArray(body.anchorSignals) && body.anchorSignals.length <= 100
-      ? body.anchorSignals.flatMap((candidate) => {
-          if (!candidate || typeof candidate !== 'object') return []
-          const item = candidate as Record<string, unknown>
-          if (
-            typeof item.field !== 'string' || item.field.length > 128
-            || typeof item.text !== 'string' || !item.text.trim() || item.text.trim().length > 500
-            || typeof item.source !== 'string' || !PROVENANCE.has(item.source as AttributionProvenance)
-          ) return []
-          return [{ field: item.field, text: item.text.trim(), source: item.source as AttributionProvenance }]
-        })
+    const startTrackId = typeof body.startTrackId === 'string' ? body.startTrackId : null
+    const direction = typeof body.direction === 'string' && body.direction.trim().length >= 3 && body.direction.trim().length <= 1000
+      ? body.direction.trim()
       : null
-    const phase = typeof body.phase === 'string' && PHASES.has(body.phase as AcousticJourneyPhase)
-      ? body.phase as AcousticJourneyPhase
-      : null
-    const phaseDescription = typeof body.phaseDescription === 'string' && body.phaseDescription.trim().length <= 1000
-      ? body.phaseDescription.trim()
-      : null
-    const familiarityTarget = typeof body.familiarityTarget === 'number' && body.familiarityTarget >= 0 && body.familiarityTarget <= 1
-      ? body.familiarityTarget
-      : null
-    const knownTrackIds = strings(body.knownTrackIds, 500)
-    const knownArtists = strings(body.knownArtists, 500)
+    const adjustment = body.adjustment === undefined
+      ? undefined
+      : typeof body.adjustment === 'string' && ADJUSTMENTS.has(body.adjustment as AcousticJourneyAdjustment)
+        ? body.adjustment as AcousticJourneyAdjustment
+        : null
     const excludeIds = strings(body.excludeIds, 1000)
-    const recentKnownness = Array.isArray(body.recentKnownness)
-      && body.recentKnownness.length <= 20
-      && body.recentKnownness.every((item) => typeof item === 'string' && KNOWNNESS.has(item as AcousticKnownness))
-      ? body.recentKnownness as AcousticKnownness[]
-      : null
     const skipPenalties = Array.isArray(body.skipPenalties) && body.skipPenalties.length <= 20
       ? body.skipPenalties.flatMap((candidate) => {
           if (!candidate || typeof candidate !== 'object') return []
           const item = candidate as Record<string, unknown>
           if (
             typeof item.trackId !== 'string'
-            || typeof item.weight !== 'number'
-            || item.weight < 0
-            || item.weight > 1
-            || typeof item.decisionsRemaining !== 'number'
-            || !Number.isInteger(item.decisionsRemaining)
-            || item.decisionsRemaining < 1
-            || item.decisionsRemaining > 3
+            || typeof item.weight !== 'number' || item.weight < 0 || item.weight > 1
+            || typeof item.decisionsRemaining !== 'number' || !Number.isInteger(item.decisionsRemaining)
+            || item.decisionsRemaining < 1 || item.decisionsRemaining > 3
           ) return []
           return [{ trackId: item.trackId, weight: item.weight, decisionsRemaining: item.decisionsRemaining }]
         })
@@ -78,11 +47,9 @@ export async function POST(request: NextRequest) {
 
     if (
       !sessionId || decisionIndex === null || decisionIndex < 0 || decisionIndex > 1000
-      || !currentTrackId || !currentTrackArtist || !anchorTrackIds || !anchorSignals
-      || !phase || !phaseDescription || familiarityTarget === null
-      || !knownTrackIds || !knownArtists || !recentKnownness || !excludeIds || !skipPenalties
+      || !currentTrackId || !currentTrackArtist || !startTrackId || !direction
+      || adjustment === null || !excludeIds || !skipPenalties
       || skipPenalties.length !== (body.skipPenalties as unknown[]).length
-      || anchorSignals.length !== (body.anchorSignals as unknown[]).length
     ) return badRequest('invalid_journey_decision_request')
 
     const selected = await selectJourneyNext({
@@ -90,39 +57,34 @@ export async function POST(request: NextRequest) {
       decisionIndex,
       currentTrackId,
       currentTrackArtist,
-      anchorTrackIds,
-      anchorSignals,
-      phase,
-      phaseDescription,
-      familiarityTarget,
-      knownTrackIds,
-      knownArtists,
-      recentKnownness,
+      startTrackId,
+      direction,
+      adjustment,
       excludeIds,
       skipPenalties,
     })
     const spotifyResponse = await spotifyFetch(`/tracks/${encodeURIComponent(selected.track.id)}`)
-    const selectedTrack = spotifyTrackToWoody(await spotifyResponse.json())
-    const decision: JourneyDecision = {
+    return NextResponse.json({
       decisionId: selected.decisionId,
-      selectedTrack,
-      phase: selected.phase,
-      knownness: selected.track.knownness,
+      selectedTrack: spotifyTrackToWoody(await spotifyResponse.json()),
       confidence: selected.confidence,
       diagnostics: {
         selectionMode: selected.selectionMode,
         currentEmbeddingAvailable: selected.currentEmbeddingAvailable,
         transitionDistance: selected.transitionDistance,
         targetDistance: selected.targetDistance,
-        familiarityFit: selected.familiarityFit,
         skipPenalty: selected.skipPenalty,
         relaxationLevel: selected.relaxationLevel,
         candidateCount: selected.candidateCount,
         latencyMs: selected.latencyMs,
+        adjustment: selected.adjustment,
       },
-    }
-    return NextResponse.json(decision)
+    })
   } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (message.includes('unsupported_current_track') || message.includes('unsupported_start_track')) {
+      return NextResponse.json({ error: 'unsupported_track' }, { status: 409 })
+    }
     return apiError(error, 'journey_selection_failed')
   }
 }

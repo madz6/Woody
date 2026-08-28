@@ -1,3 +1,7 @@
+# Historical Document — Superseded
+
+> Historical implementation context only. `README.md` and `THE_PATH.md` are the current authority.
+
 # Implementation single source of truth (this repo)
 
 - **Product app:** Next.js 15 App Router in the repository root (`app/`, `components/`, `lib/`, `hooks/`).
